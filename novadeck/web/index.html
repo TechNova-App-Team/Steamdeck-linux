@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="nova-token" content="__NOVA_TOKEN__">
+  <meta name="color-scheme" content="dark">
+  <title>NovaDeck</title>
+  <link rel="icon" href="img/novadeck.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="is-booting">
+  <div class="bg" aria-hidden="true">
+    <div class="bg-image"></div>
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+    <div class="orb orb-c"></div>
+    <div class="grain"></div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" data-icon="nova"></span>
+      <span class="brand-word">NOVA<b>DECK</b></span>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Bereiche"></nav>
+    <div class="status" id="status">
+      <span class="stat" id="stat-net" hidden></span>
+      <span class="stat" id="stat-vol" hidden></span>
+      <span class="stat" id="stat-bat" hidden></span>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" data-nav id="btn-keyboard" title="Bildschirmtastatur" aria-label="Bildschirmtastatur"><span data-icon="keyboard"></span></button>
+      <button class="icon-btn" data-nav id="btn-menu" title="Schnellmenü" aria-label="Schnellmenü"><span data-icon="sliders"></span></button>
+      <button class="icon-btn" data-nav id="btn-power" title="Ein/Aus" aria-label="Ein/Aus"><span data-icon="power"></span></button>
+    </div>
+  </header>
+
+  <section class="hero" id="hero" aria-live="polite">
+    <div class="hero-art" id="hero-art"><span class="ring"></span><span class="hero-icon" id="hero-icon"></span></div>
+    <div class="hero-text">
+      <div class="eyebrow" id="hero-eyebrow">&nbsp;</div>
+      <h1 id="hero-title">NovaDeck</h1>
+      <p id="hero-info">&nbsp;</p>
+      <div class="hero-chips" id="hero-chips"></div>
+    </div>
+    <div class="hero-clock">
+      <div class="greet" id="greet">Hallo.</div>
+      <div class="clock" id="clock">--:--</div>
+      <div class="date" id="date">&nbsp;</div>
+    </div>
+  </section>
+
+  <main class="rows" id="rows" aria-label="Apps"></main>
+
+  <footer class="hints">
+    <div class="hint-left" id="storage-line"></div>
+    <div class="hint-right">
+      <span class="hint"><kbd class="pad-btn">A</kbd>Starten</span>
+      <span class="hint"><kbd class="pad-btn">B</kbd>Zurück</span>
+      <span class="hint"><kbd class="pad-btn pad-trigger">L2</kbd>Optionen</span>
+      <span class="hint"><kbd class="pad-btn pad-wide">STEAM</kbd>+<kbd class="pad-btn">X</kbd>Tastatur</span>
+    </div>
+  </footer>
+
+  <!-- Quick menu -->
+  <aside class="drawer layer" id="drawer" aria-label="Schnellmenü" hidden>
+    <div class="drawer-head">
+      <h2>Schnellmenü</h2>
+      <button class="icon-btn small" data-nav data-close title="Schließen" aria-label="Schließen"><span data-icon="x"></span></button>
+    </div>
+    <div class="drawer-body">
+      <div class="group">
+        <div class="slider-row" id="row-volume">
+          <button class="icon-btn small" data-nav id="btn-mute" aria-label="Stumm schalten"><span data-icon="volume"></span></button>
+          <span class="slider-label">Lautstärke</span>
+          <input type="range" min="0" max="100" step="5" data-nav id="range-volume" aria-label="Lautstärke">
+          <output id="out-volume">–</output>
+        </div>
+        <div class="slider-row" id="row-brightness">
+          <span class="icon-btn small static"><span data-icon="sun"></span></span>
+          <span class="slider-label">Helligkeit</span>
+          <input type="range" min="5" max="100" step="5" data-nav id="range-brightness" aria-label="Helligkeit">
+          <output id="out-brightness">–</output>
+        </div>
+      </div>
+
+      <div class="group">
+        <button class="toggle" data-nav data-setting="closeOnLaunch">
+          <span class="toggle-text"><b>Hub beim Start schließen</b><small>Macht Platz für die App, die du startest.</small></span>
+          <span class="switch"></span>
+        </button>
+        <button class="toggle" data-nav data-setting="autostart">
+          <span class="toggle-text"><b>Beim Desktop-Start öffnen</b><small>Der Hub begrüßt dich im Desktop-Modus.</small></span>
+          <span class="switch"></span>
+        </button>
+        <button class="toggle" data-nav data-setting="reducedEffects">
+          <span class="toggle-text"><b>Effekte reduzieren</b><small>Weniger Glas &amp; Animation, spart Akku.</small></span>
+          <span class="switch"></span>
+        </button>
+      </div>
+
+      <div class="group" id="group-browser" hidden>
+        <div class="group-title">Browser für Web-Apps</div>
+        <div class="seg" id="seg-browser"></div>
+      </div>
+
+      <div class="group grid-2">
+        <button class="action" data-nav id="btn-add"><span data-icon="plus"></span>Kachel hinzufügen</button>
+        <button class="action" data-nav id="btn-unhide"><span data-icon="eye"></span><span id="unhide-label">Ausgeblendete zeigen</span></button>
+        <button class="action" data-nav data-launch="files"><span data-icon="folder"></span>Dateien</button>
+        <button class="action" data-nav data-launch="settings"><span data-icon="sliders"></span>Einstellungen</button>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Speicher</div>
+        <div id="storage-list" class="storage-list"></div>
+      </div>
+
+      <div class="drawer-foot" id="drawer-foot"></div>
+    </div>
+  </aside>
+
+  <!-- Power -->
+  <div class="modal layer" id="power" role="dialog" aria-label="Ein/Aus" hidden>
+    <div class="modal-card power-card">
+      <h2>Was möchtest du tun?</h2>
+      <div class="power-grid">
+        <button class="power-btn primary" data-nav data-power="gamemode"><span data-icon="device"></span><b id="gamemode-label">Gaming-Modus</b><small>Zurück zu Steam</small></button>
+        <button class="power-btn" data-nav data-power="desktop"><span data-icon="desktop"></span><b>Zum Desktop</b><small>Hub schließen</small></button>
+        <button class="power-btn" data-nav data-power="suspend"><span data-icon="moon"></span><b>Standby</b><small>Kurz schlafen legen</small></button>
+        <button class="power-btn" data-nav data-power="reboot" data-confirm><span data-icon="restart"></span><b>Neu starten</b><small>Neu hochfahren</small></button>
+        <button class="power-btn" data-nav data-power="poweroff" data-confirm><span data-icon="power"></span><b>Ausschalten</b><small>Herunterfahren</small></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add tile -->
+  <div class="modal layer" id="add" role="dialog" aria-label="Kachel hinzufügen" hidden>
+    <form class="modal-card add-card" id="add-form" autocomplete="off">
+      <h2>Eigene Kachel</h2>
+      <p class="muted">Jede Website als App: Sie öffnet sich ohne Browser-Leisten und landet auch im App-Menü.</p>
+      <label class="field"><span>Name</span><input data-nav id="add-name" maxlength="40" placeholder="z. B. ARD Mediathek" required></label>
+      <label class="field"><span>Adresse</span><input data-nav id="add-url" inputmode="url" placeholder="ardmediathek.de" required></label>
+      <div class="field"><span>Bereich</span><div class="seg" id="add-cat"></div></div>
+      <div class="form-actions">
+        <button type="button" class="action" data-nav id="add-keyboard"><span data-icon="keyboard"></span>Tastatur</button>
+        <button type="button" class="action ghost" data-nav data-close>Abbrechen</button>
+        <button type="submit" class="action solid" data-nav>Hinzufügen</button>
+      </div>
+      <p class="form-error" id="add-error" hidden></p>
+    </form>
+  </div>
+
+  <!-- Context menu -->
+  <div class="ctx layer" id="ctx" role="menu" hidden></div>
+
+  <!-- Launch overlay -->
+  <div class="launch" id="launch" hidden>
+    <div class="launch-art"><span class="launch-ring"></span><span class="launch-icon" id="launch-icon"></span></div>
+    <div class="launch-title" id="launch-title"></div>
+    <div class="launch-sub" id="launch-sub"></div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <div class="offline" id="offline" hidden>
+    <div class="modal-card">
+      <h2>Verbindung verloren</h2>
+      <p class="muted">Der NovaDeck-Dienst antwortet nicht. Starte NovaDeck einfach neu über das App-Menü.</p>
+      <button class="action solid" data-nav id="btn-retry">Erneut versuchen</button>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

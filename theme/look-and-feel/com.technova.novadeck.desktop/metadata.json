@@ -1,0 +1,20 @@
+{
+    "KPackageStructure": "Plasma/LookAndFeel",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "TechNova App Team"
+            }
+        ],
+        "Description": "Glas-Startbildschirm für NovaDeck: schwarz, grau, neon-weiß.",
+        "Id": "com.technova.novadeck.desktop",
+        "License": "MIT",
+        "Name": "NovaDeck",
+        "Version": "1.0",
+        "Website": "https://github.com/TechNova-App-Team/Steamdeck-linux"
+    },
+    "X-KDE-ServiceTypes": [
+        "Plasma/LookAndFeel"
+    ],
+    "X-Plasma-APIVersion": "2"
+}

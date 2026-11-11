@@ -1,0 +1,120 @@
+{
+  "categories": [
+    { "id": "play",   "name": "Spielen" },
+    { "id": "watch",  "name": "Schauen" },
+    { "id": "social", "name": "Musik & Chat" },
+    { "id": "tools",  "name": "Werkzeuge" }
+  ],
+  "defaultFavorites": ["minecraft", "fortnite", "netflix", "youtube", "spotify"],
+  "apps": [
+    {
+      "id": "minecraft", "name": "Minecraft", "subtitle": "Java Edition · Prism Launcher",
+      "category": "play", "icon": "cube", "kind": "flatpak", "flatpak": "org.prismlauncher.PrismLauncher", "steamName": "Prism Launcher",
+      "info": "Startet den Prism Launcher. Einmal mit deinem Microsoft-Konto anmelden, Version wählen, spielen. Tipp: Die Mod „Controlify“ bringt volle Controller-Steuerung."
+    },
+    {
+      "id": "fortnite", "name": "Fortnite", "subtitle": "Cloud · Xbox Cloud Gaming",
+      "category": "play", "icon": "bolt", "kind": "web",
+      "url": "https://www.xbox.com/play/games/fortnite/BT5P2X999VH2",
+      "info": "Fortnite läuft unter Linux nicht direkt, weil Epic den Anti-Cheat blockiert. Über Xbox Cloud Gaming klappt es trotzdem: kostenlos, du brauchst nur ein Microsoft-Konto."
+    },
+    {
+      "id": "geforcenow", "name": "GeForce NOW", "subtitle": "Cloud-Gaming",
+      "category": "play", "icon": "cloudplay", "kind": "web", "url": "https://play.geforcenow.com",
+      "info": "Spiel deine Steam- und Epic-Spiele aus der Cloud, Fortnite inklusive. Es gibt eine kostenlose Stufe mit Warteschlange."
+    },
+    {
+      "id": "xcloud", "name": "Xbox Cloud", "subtitle": "Game Pass in der Cloud",
+      "category": "play", "icon": "cloudpad", "kind": "web", "url": "https://www.xbox.com/play",
+      "info": "Hunderte Spiele mit Game Pass Ultimate direkt streamen, ohne Download."
+    },
+    {
+      "id": "steam", "name": "Steam", "subtitle": "Deine Bibliothek",
+      "category": "play", "icon": "pad", "kind": "uri", "uri": "steam://open/games", "requires": "steam",
+      "info": "Öffnet deine Steam-Bibliothek hier im Desktop-Modus."
+    },
+    {
+      "id": "heroic", "name": "Heroic", "subtitle": "Epic, GOG & Amazon",
+      "category": "play", "icon": "shield", "kind": "flatpak", "flatpak": "com.heroicgameslauncher.hgl", "steamName": "Heroic Games Launcher",
+      "info": "Spiele von Epic Games, GOG und Amazon Prime Gaming, inklusive der wöchentlichen Gratis-Spiele von Epic."
+    },
+
+    {
+      "id": "netflix", "name": "Netflix", "subtitle": "Serien & Filme",
+      "category": "watch", "icon": "letter-n", "kind": "web", "url": "https://www.netflix.com/browse",
+      "info": "Läuft als eigenes App-Fenster ohne Browser-Leisten. Einmal anmelden, danach bleibst du eingeloggt."
+    },
+    {
+      "id": "youtube", "name": "YouTube", "subtitle": "Videos",
+      "category": "watch", "icon": "play", "kind": "web", "url": "https://www.youtube.com",
+      "info": "YouTube als eigenes App-Fenster, angemeldet mit deinem Google-Konto."
+    },
+    {
+      "id": "primevideo", "name": "Prime Video", "subtitle": "Serien & Filme",
+      "category": "watch", "icon": "tv", "kind": "web", "url": "https://www.primevideo.com",
+      "info": "Prime Video als eigenes App-Fenster."
+    },
+    {
+      "id": "disneyplus", "name": "Disney+", "subtitle": "Serien & Filme",
+      "category": "watch", "icon": "sparkle", "kind": "web", "url": "https://www.disneyplus.com",
+      "info": "Disney+ als eigenes App-Fenster."
+    },
+    {
+      "id": "twitch", "name": "Twitch", "subtitle": "Livestreams",
+      "category": "watch", "icon": "live", "kind": "web", "url": "https://www.twitch.tv",
+      "info": "Livestreams und Chat als eigenes App-Fenster."
+    },
+    {
+      "id": "crunchyroll", "name": "Crunchyroll", "subtitle": "Anime",
+      "category": "watch", "icon": "orbit", "kind": "web", "url": "https://www.crunchyroll.com",
+      "info": "Anime-Streaming als eigenes App-Fenster."
+    },
+
+    {
+      "id": "spotify", "name": "Spotify", "subtitle": "Musik & Podcasts",
+      "category": "social", "icon": "bars", "kind": "flatpak", "flatpak": "com.spotify.Client", "steamName": "Spotify",
+      "info": "Die richtige Spotify-App. Läuft im Hintergrund weiter, auch während du spielst."
+    },
+    {
+      "id": "ytmusic", "name": "YouTube Music", "subtitle": "Musik",
+      "category": "social", "icon": "note", "kind": "web", "url": "https://music.youtube.com",
+      "info": "YouTube Music als eigenes App-Fenster."
+    },
+    {
+      "id": "discord", "name": "Discord", "subtitle": "Voice & Chat",
+      "category": "social", "icon": "headset", "kind": "flatpak", "flatpak": "com.discordapp.Discord", "steamName": "Discord",
+      "info": "Die Discord-App für Voice-Chat mit deinen Freunden."
+    },
+
+    {
+      "id": "browser", "name": "Browser", "subtitle": "Im Web surfen",
+      "category": "tools", "icon": "globe", "kind": "browser",
+      "info": "Ein normales Browser-Fenster mit Tabs."
+    },
+    {
+      "id": "files", "name": "Dateien", "subtitle": "Downloads, SD-Karte …",
+      "category": "tools", "icon": "folder", "kind": "command", "command": ["dolphin"],
+      "info": "Der Dateimanager. Deine SD-Karte findest du links unter „Geräte“."
+    },
+    {
+      "id": "store", "name": "App Store", "subtitle": "Apps installieren",
+      "category": "tools", "icon": "bag", "kind": "command", "command": ["plasma-discover"],
+      "info": "Discover: Hier findest du tausende Apps. Alles, was du dort installierst, übersteht SteamOS-Updates."
+    },
+    {
+      "id": "keyboard", "name": "Tastatur", "subtitle": "Bildschirmtastatur",
+      "category": "tools", "icon": "keyboard", "kind": "uri", "uri": "steam://open/keyboard", "requires": "steam",
+      "info": "Blendet die Steam-Tastatur ein. Geht auch jederzeit mit Steam + X."
+    },
+    {
+      "id": "settings", "name": "Einstellungen", "subtitle": "System",
+      "category": "tools", "icon": "sliders", "kind": "command", "command": ["systemsettings"],
+      "info": "Die Systemeinstellungen des Desktop-Modus."
+    },
+    {
+      "id": "terminal", "name": "Konsole", "subtitle": "Terminal",
+      "category": "tools", "icon": "terminal", "kind": "command", "command": ["konsole"],
+      "info": "Das Terminal, für alles Fortgeschrittene."
+    }
+  ]
+}

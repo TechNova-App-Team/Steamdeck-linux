@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Lint shell scripts
+        run: shellcheck install.sh uninstall.sh tests/test_install.sh
+      - name: Check JavaScript syntax
+        run: node --check novadeck/web/js/app.js
+      - name: Python unit & API tests
+        run: python -m unittest discover -s tests -v
+      - name: Installer round trip (simulated KDE)
+        run: bash tests/test_install.sh
