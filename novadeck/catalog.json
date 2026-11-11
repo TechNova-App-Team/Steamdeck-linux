@@ -107,6 +107,11 @@
       "info": "Blendet die Steam-Tastatur ein. Geht auch jederzeit mit Steam + X."
     },
     {
+      "id": "updates", "name": "Updates", "subtitle": "Apps & NovaDeck aktuell halten",
+      "category": "tools", "icon": "update", "kind": "updates",
+      "info": "Hält Chrome, den Minecraft-Launcher, Spotify und NovaDeck selbst aktuell. Läuft auch automatisch im Hintergrund."
+    },
+    {
       "id": "settings", "name": "Einstellungen", "subtitle": "System",
       "category": "tools", "icon": "sliders", "kind": "command", "command": ["systemsettings"],
       "info": "Die Systemeinstellungen des Desktop-Modus."

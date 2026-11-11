@@ -26,6 +26,10 @@
     statusFails: 0,
     pollTimer: 0,
     jobsSeen: {},
+    updRunning: false,
+    updTimer: 0,
+    updFocusMoved: false,
+    selfUpdating: false,
   };
 
   // ---------------------------------------------------------------- utils
@@ -45,6 +49,25 @@
   function bytes(n) {
     if (n >= 1e12) return `${(n / 1e12).toLocaleString('de-DE', { maximumFractionDigits: 1 })} TB`;
     return `${(n / 1e9).toLocaleString('de-DE', { maximumFractionDigits: n < 1e10 ? 1 : 0 })} GB`;
+  }
+
+  function ago(ts) {
+    if (!ts) return 'noch nie';
+    const min = Math.round((Date.now() / 1000 - ts) / 60);
+    if (min < 1) return 'gerade eben';
+    if (min < 60) return `vor ${min} Min.`;
+    const h = Math.round(min / 60);
+    return h < 24 ? `vor ${h} Std.` : `vor ${Math.round(h / 24)} Tg.`;
+  }
+  const updatesNow = () => (STATUS && STATUS.updates) || (S && S.updates) || null;
+  function updatesText() {
+    const u = updatesNow();
+    if (!u) return { sub: 'Apps & NovaDeck aktuell halten', count: 0 };
+    if (u.running) return { sub: u.running.step || 'Wird aktualisiert …', count: 0, busy: true };
+    if (u.checking && !u.checkedAt) return { sub: 'Suche nach Updates …', count: 0, busy: true };
+    if (u.count) return { sub: u.count === 1 ? '1 Update bereit' : `${u.count} Updates bereit`, count: u.count };
+    if (u.error) return { sub: 'Gerade offline', count: 0 };
+    return { sub: u.checkedAt ? 'Alles aktuell' : 'Apps & NovaDeck aktuell halten', count: 0 };
   }
 
   // ---------------------------------------------------------------- api
@@ -96,6 +119,7 @@
 
   // ---------------------------------------------------------------- render
   function tileHTML(app, rowId) {
+    if (app.kind === 'updates') return updatesTileHTML(app, rowId);
     const job = jobFor(app);
     const busy = job && job.status === 'running';
     let badges = '';
@@ -108,6 +132,30 @@
       <span class="badges">${badges}</span>
       <span class="label"><span class="name">${esc(app.name)}</span><span class="sub">${esc(app.subtitle)}</span></span>
     </button>`;
+  }
+
+  function updatesTileHTML(app, rowId) {
+    const t = updatesText();
+    const badges = t.count ? `<span class="badge count">${t.count}</span>` : '';
+    return `<button class="tile${t.busy ? ' is-busy' : ''}" data-nav data-tile data-id="${esc(app.id)}" data-row="${rowId}" aria-label="${esc(app.name)}">
+      <span class="ico">${icon(app.icon)}</span>
+      <span class="badges">${badges}</span>
+      <span class="label"><span class="name">${esc(app.name)}</span><span class="sub">${esc(t.sub)}</span></span>
+    </button>`;
+  }
+
+  function refreshUpdatesTiles() {
+    const app = APPS.get('updates');
+    if (!app) return;
+    const t = updatesText();
+    $$('.tile[data-id="updates"]').forEach((tile) => {
+      $('.sub', tile).textContent = t.sub;
+      $('.badges', tile).innerHTML = t.count ? `<span class="badge count">${t.count}</span>` : '';
+      tile.classList.toggle('is-busy', !!t.busy);
+      if (tile === ui.focus) updateHero(tile);
+    });
+    const label = $('#updates-label');
+    if (label) label.textContent = t.count ? `${t.count} Updates` : 'Updates';
   }
 
   function render() {
@@ -154,6 +202,21 @@
     }
     const app = APPS.get(tile.dataset.id);
     if (!app) return null;
+    if (app.kind === 'updates') {
+      const u = updatesNow();
+      const t = updatesText();
+      let info = app.info;
+      if (u && u.running) info = `${u.running.step} Du kannst währenddessen weiter alles benutzen.`;
+      else if (u && u.count) {
+        const names = u.apps.map((a) => a.name);
+        if (u.self.available) names.unshift(`NovaDeck ${u.self.latest}`);
+        info = `Bereit: ${names.slice(0, 4).join(', ')}${u.others ? `${names.length ? ' und ' : ''}${u.others} Systemkomponente${u.others === 1 ? '' : 'n'}` : ''}.`;
+      } else if (u && u.checkedAt) info = `Alles ist aktuell. Zuletzt geprüft ${ago(u.checkedAt)}.`;
+      return {
+        key: `updates|${t.sub}|${info}`, icon: app.icon, name: app.name, eyebrow: `Werkzeuge · NovaDeck ${S.version}`, info,
+        chips: `<span class="chip solid"><kbd>A</kbd>${u && u.count ? 'Ansehen & aktualisieren' : 'Öffnen'}</span>`,
+      };
+    }
     const job = jobFor(app);
     const eyebrow = app.id === S.last && app.available ? `Zuletzt gestartet · ${kindLabel(app)}` : `${catName(app.category)} · ${kindLabel(app)}`;
     let chips = '';
@@ -395,6 +458,7 @@
   async function launchApp(id, tile) {
     const app = APPS.get(id);
     if (!app) return;
+    if (app.kind === 'updates') { press(tile); return openUpdates(); }
     const job = jobFor(app);
     if (job && job.status === 'running') return toast('download', `${job.label} wird noch installiert …`);
     if (!app.available) {
@@ -581,6 +645,116 @@
     }
   }
 
+  // ---------------------------------------------------------------- updates
+  const FLATPAK_ICONS = { 'com.google.Chrome': 'globe', 'org.prismlauncher.PrismLauncher': 'cube', 'com.spotify.Client': 'bars', 'com.discordapp.Discord': 'headset', 'com.heroicgameslauncher.hgl': 'shield', 'org.videolan.VLC': 'play' };
+
+  function renderUpdates() {
+    const u = updatesNow();
+    if (!u) return;
+    const rows = [];
+    rows.push(`<div class="upd-row${u.self.available ? '' : ' is-ok'}"><span>${icon('nova')}</span>
+      <div><b>NovaDeck</b><small>${u.self.available ? `${esc(u.self.current)} → ${esc(u.self.latest)}${u.self.notes.length ? ` · ${esc(u.self.notes[0])}` : ''}` : `Version ${esc(u.self.current)}`}</small></div>
+      <span class="tag${u.self.available ? ' new' : ''}">${u.self.available ? 'Neu' : 'Aktuell'}</span></div>`);
+    u.apps.forEach((a) => rows.push(`<div class="upd-row"><span>${icon(FLATPAK_ICONS[a.id] || 'bag')}</span>
+      <div><b>${esc(a.name)}</b><small>${esc(a.id)}</small></div><span class="tag new">Update</span></div>`));
+    if (u.others) rows.push(`<div class="upd-row"><span>${icon('sliders')}</span><div><b>Systemkomponenten</b><small>Laufzeiten &amp; Treiber für deine Apps</small></div><span class="tag new">${u.others}</span></div>`);
+    if (!u.apps.length && !u.others) rows.push(`<div class="upd-row is-ok"><span>${icon('check')}</span><div><b>Apps</b><small>${u.checking ? 'Suche läuft …' : 'Alle Apps sind aktuell'}</small></div><span class="tag">${u.checking ? '…' : 'Aktuell'}</span></div>`);
+    $('#upd-list').innerHTML = rows.join('');
+
+    let sub = u.checking ? 'Suche nach Updates …' : `Zuletzt geprüft ${ago(u.checkedAt)}`;
+    if (u.error && !u.checking) sub = u.error;
+    if (u.last && !u.running && !u.checking) sub += ` · ${u.last.message}`;
+    $('#upd-sub').textContent = sub;
+    $('#upd-title').textContent = u.count ? (u.count === 1 ? '1 Update bereit' : `${u.count} Updates bereit`)
+      : u.checking ? 'Suche nach Updates …' : u.error ? 'Offline' : 'Alles aktuell';
+
+    const running = !!u.running;
+    $('#upd-progress').hidden = !running;
+    if (running) $('#upd-step').textContent = u.running.step;
+    const run = $('#upd-run');
+    run.disabled = running || !u.count;
+    run.textContent = running ? 'Läuft …' : u.count ? 'Alles aktualisieren' : 'Nichts zu tun';
+    $('#upd-check').disabled = running || u.checking;
+    $$('#updates .toggle[data-setting]').forEach((t) => t.setAttribute('aria-checked', String(!!S.settings[t.dataset.setting])));
+    if (scope() && scope().id === 'updates') {
+      const closeBtn = $('#updates [data-close]');
+      if (ui.focus && ui.focus.disabled) setFocus(run.disabled ? closeBtn : run, { noScroll: true });
+      else if (ui.focus === closeBtn && !run.disabled && !ui.updFocusMoved) { ui.updFocusMoved = true; setFocus(run, { noScroll: true }); }
+    }
+  }
+
+  // Fast polling only while the updates window is open or something is running.
+  function ensureUpdatePolling() {
+    const u = updatesNow();
+    const need = (scope() && scope().id === 'updates') || ui.updRunning || !!(u && (u.checking || u.running));
+    if (need && !ui.updTimer) {
+      ui.updTimer = setInterval(async () => {
+        try {
+          STATUS = await api.get('/api/status');
+          handleUpdates(STATUS.updates);
+        } catch { /* the regular poll shows connection problems */ }
+      }, 1000);
+    } else if (!need && ui.updTimer) {
+      clearInterval(ui.updTimer);
+      ui.updTimer = 0;
+    }
+  }
+
+  function openUpdates() {
+    closeAllLayers();
+    ui.updFocusMoved = false;
+    renderUpdates();
+    openLayer($('#updates'), { onClose: () => setTimeout(ensureUpdatePolling, 0) });
+    const u = updatesNow();
+    setFocus(u && u.count && !u.running ? $('#upd-run') : $('#updates [data-close]'), { noScroll: true });
+    ensureUpdatePolling();
+    if (!u || (!u.checking && !u.running && (!u.checkedAt || Date.now() / 1000 - u.checkedAt > 600))) checkUpdates();
+  }
+
+  async function checkUpdates() {
+    try {
+      await api.post('/api/updates/check');
+      if (STATUS && STATUS.updates) STATUS.updates.checking = true;
+      renderUpdates();
+      ensureUpdatePolling();
+    } catch (e) { toast('info', e.message); }
+  }
+
+  async function runUpdates() {
+    try {
+      const res = await api.post('/api/updates/run', { self: true });
+      if (STATUS) STATUS.updates = res.updates;
+      ui.updRunning = true;
+      renderUpdates();
+      refreshUpdatesTiles();
+      ensureUpdatePolling();
+    } catch (e) { toast('info', e.message); }
+  }
+
+  function handleUpdates(u) {
+    if (!u) return;
+    if (u.running && u.running.selfUpdate && !ui.selfUpdating) {
+      ui.selfUpdating = true;
+      closeAllLayers();
+      showLaunch('update', `NovaDeck ${u.self.latest}`, 'Wird installiert. Der Hub startet gleich neu …');
+      setTimeout(() => { if (ui.selfUpdating) $('#launch-sub').textContent = 'Dauert länger als gedacht. Du kannst NovaDeck auch neu öffnen.'; }, 90000);
+    }
+    if (ui.updRunning && !u.running) {
+      ui.updRunning = false;
+      if (u.last) toast(u.last.ok ? 'check' : 'info', u.last.message, 5000);
+    }
+    if (u.running) ui.updRunning = true;
+    refreshUpdatesTiles();
+    if (scope() && scope().id === 'updates') renderUpdates();
+    ensureUpdatePolling();
+  }
+
+  function showWhatsNew(info) {
+    $('#wn-title').textContent = `Neu in NovaDeck ${info.version}`;
+    $('#wn-list').innerHTML = (info.notes || []).map((n) => `<li>${esc(n)}</li>`).join('');
+    openLayer($('#whatsnew'), { focus: $('#wn-ok') });
+  }
+
   // ---------------------------------------------------------------- add tile
   let addCategory = 'watch';
   function openAdd() {
@@ -690,12 +864,13 @@
       ui.statusFails = 0;
       $('#offline').hidden = true;
       renderStatus();
+      handleUpdates(STATUS.updates);
       const { changed, running } = handleJobs(STATUS.jobs);
       if (changed) await reloadState();
-      if (running) next = 1500;
+      if (running || (STATUS.updates && (STATUS.updates.running || STATUS.updates.checking))) next = 1500;
     } catch (e) {
       ui.statusFails += 1;
-      if (ui.statusFails >= 2) {
+      if (ui.statusFails >= 2 && !ui.selfUpdating) {
         $('#offline').hidden = false;
         setFocus($('#btn-retry'), { noScroll: true });
       }
@@ -918,6 +1093,13 @@
       case 'btn-mute': return setVolume({ mute: 'toggle' });
       case 'add-keyboard': return launchApp('keyboard');
       case 'btn-retry': return location.reload();
+      case 'btn-updates': return openUpdates();
+      case 'upd-run': return runUpdates();
+      case 'upd-check': return checkUpdates();
+      case 'wn-ok':
+        closeLayer();
+        api.post('/api/whatsnew/seen').catch(() => {});
+        return undefined;
       default: return undefined;
     }
   });
@@ -935,6 +1117,7 @@
     try {
       const res = await api.post('/api/settings', { [key]: value });
       S.settings = res.settings;
+      $$(`.toggle[data-setting="${key}"]`).forEach((t) => t.setAttribute('aria-checked', String(!!S.settings[key])));
       applySettings();
     } catch (e) {
       el.setAttribute('aria-checked', String(!value));
@@ -1019,7 +1202,8 @@
     const start = (S.last && (findTile(S.last, 'fav') || findTile(S.last))) || rowDefault($('.row'));
     setFocus(start);
     requestAnimationFrame(() => document.body.classList.remove('is-booting'));
-    if (S.demo) toast('info', 'Demo-Modus: Es wird nichts wirklich gestartet.', 4200);
+    if (S.whatsNew) setTimeout(() => showWhatsNew(S.whatsNew), 700);
+    else if (S.demo) toast('info', 'Demo-Modus: Es wird nichts wirklich gestartet.', 4200);
     else if (!S.browser) toast('info', 'Für Web-Apps fehlt ein Browser. Wähl eine Kachel und drück A, um Chrome zu installieren.', 7000);
   }
 

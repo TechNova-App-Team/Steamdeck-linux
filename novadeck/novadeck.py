@@ -23,18 +23,32 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0.0"
-
 APP_DIR = Path(__file__).resolve().parent
 WEB_DIR = APP_DIR / "web"
 CATALOG_FILE = APP_DIR / "catalog.json"
 HOME = Path.home()
+
+
+def _load_version_info() -> dict:
+    try:
+        with open(APP_DIR / "version.json", encoding="utf-8") as fh:
+            info = json.load(fh)
+        if isinstance(info, dict) and isinstance(info.get("version"), str):
+            return info
+    except (OSError, ValueError):
+        pass
+    return {"version": "0.0.0", "notes": []}
+
+
+VERSION_INFO = _load_version_info()
+VERSION = VERSION_INFO["version"]
 
 
 def _xdg(var: str, default: Path) -> Path:
@@ -62,6 +76,12 @@ DEBUG = os.environ.get("NOVADECK_DEBUG") == "1"
 HUB_PROFILE_DIRNAME = "novadeck-hub-profile"
 FLATHUB_REPO = "https://dl.flathub.org/repo/flathub.flatpakrepo"
 CHROME_FLATPAK = "com.google.Chrome"
+
+# Where NovaDeck updates itself from (the public GitHub repo, default branch).
+UPDATE_REPO = os.environ.get("NOVADECK_REPO", "TechNova-App-Team/Steamdeck-linux")
+UPDATE_REF = os.environ.get("NOVADECK_REF", "HEAD")
+UPDATE_INTERVAL = 6 * 3600
+CLOUD_GAMING_PAUSE = 3 * 3600  # no background downloads this long after starting a cloud game
 
 # Browsers we know how to drive, in order of preference. Chromium-based ones
 # give real app windows (no tabs, no address bar) and play Netflix & co.
@@ -116,7 +136,7 @@ def run_out(argv: list[str], timeout: float = 3.0) -> str:
         return ""
 
 
-def spawn(argv: list[str], log_name: str = "apps") -> None:
+def spawn(argv: list[str], log_name: str = "apps", env: dict | None = None) -> None:
     """Start a program detached from us, with its output in a log file."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     log_path = STATE_DIR / f"{log_name}.log"
@@ -133,7 +153,7 @@ def spawn(argv: list[str], log_name: str = "apps") -> None:
             fh.write(b"(demo mode: not started)\n")
             return
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
-                                start_new_session=True, close_fds=True)
+                                start_new_session=True, close_fds=True, env=env)
     # Reap the child when it exits so it never lingers as a zombie.
     threading.Thread(target=proc.wait, daemon=True).start()
 
@@ -166,7 +186,7 @@ def load_catalog() -> dict:
         return json.load(fh)
 
 
-DEFAULT_SETTINGS = {"closeOnLaunch": True, "reducedEffects": False, "browser": None}
+DEFAULT_SETTINGS = {"closeOnLaunch": True, "reducedEffects": False, "autoUpdate": True, "browser": None}
 CUSTOM_CATEGORIES = {"play", "watch", "social", "tools"}
 
 
@@ -214,6 +234,7 @@ class Store:
             "custom": [],
             "settings": dict(DEFAULT_SETTINGS),
             "last": None,
+            "seenVersion": VERSION,
         }
 
     def _load(self) -> dict:
@@ -239,6 +260,8 @@ class Store:
                     data["settings"][key] = value
         if isinstance(saved.get("last"), str):
             data["last"] = saved["last"]
+        # Existing installs from before 1.1 did not track this: show them what's new.
+        data["seenVersion"] = saved["seenVersion"] if isinstance(saved.get("seenVersion"), str) else "1.0.0"
         return data
 
     def save(self) -> None:
@@ -408,6 +431,8 @@ def describe_app(app: dict, flatpaks: set[str], browser: Browser | None) -> dict
     elif kind == "command":
         available = DEMO or shutil.which(app["command"][0]) is not None
         reason = "" if available else "Auf diesem System nicht vorhanden"
+    elif kind == "updates":
+        available = True
     elif kind == "uri":
         req = app.get("requires")
         available = DEMO or (shutil.which("xdg-open") is not None and (not req or shutil.which(req) is not None))
@@ -419,7 +444,7 @@ def describe_app(app: dict, flatpaks: set[str], browser: Browser | None) -> dict
         "available": available,
         "installId": install_id,
         "reason": reason,
-        "keepHub": bool(app.get("keepHub")) or app["id"] == "keyboard",
+        "keepHub": bool(app.get("keepHub")) or app["id"] == "keyboard" or kind == "updates",
     })
     return public
 
@@ -899,6 +924,278 @@ def set_autostart(enabled: bool) -> None:
 
 
 # --------------------------------------------------------------------------
+# Updates: Flatpak apps and NovaDeck itself
+# --------------------------------------------------------------------------
+
+def parse_version(text: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in re.findall(r"\d+", text or "")[:3]) or (0,)
+
+
+def fetch_remote_version(timeout: float = 6.0) -> dict | None:
+    """Reads novadeck/version.json from the GitHub repo (None when offline)."""
+    url = f"https://raw.githubusercontent.com/{UPDATE_REPO}/{UPDATE_REF}/novadeck/version.json"
+    req = urllib.request.Request(url, headers={"User-Agent": f"NovaDeck/{VERSION}", "Cache-Control": "no-cache"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            info = json.loads(res.read(65536))
+    except Exception:  # noqa: BLE001 - offline, GitHub down, bad JSON: all mean "unknown"
+        return None
+    if isinstance(info, dict) and isinstance(info.get("version"), str):
+        notes = info.get("notes") if isinstance(info.get("notes"), list) else []
+        return {"version": info["version"], "notes": [str(n) for n in notes][:12]}
+    return None
+
+
+def safe_extract(archive: Path, dest: Path) -> Path:
+    """Unpacks a GitHub tarball without letting it write outside `dest`."""
+    dest.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive, "r:gz") as tar:
+        members = []
+        for member in tar.getmembers():
+            parts = Path(member.name).parts
+            if member.name.startswith("/") or ".." in parts:
+                raise ValueError(f"Unsicherer Pfad im Update: {member.name}")
+            if member.isfile() or member.isdir():
+                members.append(member)
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(dest, members=members, filter="data")
+        else:  # pragma: no cover - Python < 3.11.4
+            tar.extractall(dest, members=members)
+    for root in sorted(p for p in dest.iterdir() if p.is_dir()):
+        if (root / "install.sh").is_file() and (root / "novadeck" / "novadeck.py").is_file():
+            return root
+    raise ValueError("Update-Paket ist unvollständig.")
+
+
+def apply_self_update(reopen: bool) -> None:
+    """Downloads the newest NovaDeck and runs its installer in update mode (detached)."""
+    if DEMO:
+        return spawn(["true"], "update")
+    work = CACHE_DIR / "update"
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True, exist_ok=True)
+    archive = work / "novadeck.tar.gz"
+    url = f"https://codeload.github.com/{UPDATE_REPO}/tar.gz/{UPDATE_REF}"
+    req = urllib.request.Request(url, headers={"User-Agent": f"NovaDeck/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=60) as res, open(archive, "wb") as fh:
+        copied = 0
+        while chunk := res.read(1 << 16):
+            copied += len(chunk)
+            if copied > 200 * 1024 * 1024:
+                raise ValueError("Update-Paket ist zu groß.")
+            fh.write(chunk)
+    src = safe_extract(archive, work / "src")
+    argv = ["bash", str(src / "install.sh"), "--update"] + (["--reopen"] if reopen else [])
+    spawn(argv, "update", env={**os.environ, "NOVA_IN_TERMINAL": "1"})
+
+
+def flatpak_pending_updates() -> tuple[list[dict], int, bool]:
+    """Returns (apps with updates, number of other refs, whether the lookup worked)."""
+    names: dict[str, str] = {}
+    for line in run_out(["flatpak", "list", "--app", "--columns=application,name"], 15).splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2 and parts[0].strip():
+            names[parts[0].strip()] = parts[1].strip() or parts[0].strip()
+    apps: list[dict] = []
+    others, seen, worked = 0, set(), False
+    for scope in ("--user", "--system"):
+        try:
+            res = subprocess.run(["flatpak", "remote-ls", scope, "--updates", "--columns=application"],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                 timeout=90, check=False)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        worked = worked or res.returncode == 0
+        for ref in res.stdout.decode("utf-8", "replace").split():
+            if ref in seen or ref.lower() == "application":
+                continue
+            seen.add(ref)
+            if ref in names:
+                apps.append({"id": ref, "name": names[ref], "scope": scope[2:]})
+            else:
+                others += 1
+    return apps, others, worked
+
+
+def system_updates_allowed() -> bool:
+    """True if polkit lets us update system-wide Flatpaks without asking for a password."""
+    if not shutil.which("pkcheck"):
+        return False
+    try:
+        return subprocess.run(["pkcheck", "--action-id", "org.freedesktop.Flatpak.app-update",
+                               "--process", str(os.getpid())], stdin=subprocess.DEVNULL,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _low_priority() -> list[str]:
+    prefix = []
+    if shutil.which("nice"):
+        prefix += ["nice", "-n", "15"]
+    if shutil.which("ionice"):
+        prefix += ["ionice", "-c", "3"]
+    return prefix
+
+
+class Updater:
+    def __init__(self, ctx: "Context"):
+        self.ctx = ctx
+        self.lock = threading.Lock()
+        self.apps: list[dict] = []
+        self.others = 0
+        self.remote: dict | None = None
+        self.checked_at: float | None = None
+        self.checking = False
+        self.running: dict | None = None
+        self.last: dict | None = None
+        self.error = ""
+        self._demo_done = False
+
+    def summary(self) -> dict:
+        with self.lock:
+            latest = (self.remote or {}).get("version") or VERSION
+            self_available = parse_version(latest) > parse_version(VERSION)
+            return {
+                "apps": [dict(a) for a in self.apps],
+                "others": self.others,
+                "count": len(self.apps) + self.others + (1 if self_available else 0),
+                "self": {"current": VERSION, "latest": latest, "available": self_available,
+                         "notes": list((self.remote or {}).get("notes", [])) if self_available else []},
+                "checking": self.checking,
+                "checkedAt": self.checked_at,
+                "running": dict(self.running) if self.running else None,
+                "last": dict(self.last) if self.last else None,
+                "error": self.error,
+            }
+
+    def check_async(self) -> None:
+        threading.Thread(target=self.check, daemon=True).start()
+
+    def check(self) -> None:
+        with self.lock:
+            if self.checking or self.running:
+                return
+            self.checking = True
+        try:
+            if DEMO:
+                time.sleep(1.0)
+                pending = not self._demo_done
+                apps = [{"id": "com.google.Chrome", "name": "Google Chrome", "scope": "user"}] if pending else []
+                others, worked = (2 if pending else 0), True
+                remote = {"version": "1.2.0" if pending else VERSION,
+                          "notes": ["Beispiel: Neue Funktion aus der Demo."] if pending else []}
+            else:
+                apps, others, worked = flatpak_pending_updates() if shutil.which("flatpak") else ([], 0, True)
+                remote = fetch_remote_version()
+            with self.lock:
+                self.apps, self.others = apps, others
+                if remote:
+                    self.remote = remote
+                self.checked_at = time.time()
+                self.error = "" if worked or remote else "Keine Verbindung. Bist du online?"
+        finally:
+            with self.lock:
+                self.checking = False
+
+    def run(self, auto: bool = False, include_self: bool = True) -> bool:
+        with self.lock:
+            if self.running:
+                return False
+            self.running = {"step": "Starte …", "started": time.time(), "auto": auto, "selfUpdate": False}
+        threading.Thread(target=self._run, args=(auto, include_self), daemon=True).start()
+        return True
+
+    def _step(self, text: str) -> None:
+        with self.lock:
+            if self.running:
+                self.running["step"] = text
+
+    def _stream(self, argv: list[str], names: dict[str, str]) -> int:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with open(STATE_DIR / "update.log", "ab") as logfh:
+            logfh.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] $ {' '.join(argv)}\n".encode())
+            try:
+                proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT)
+            except OSError as exc:
+                logfh.write(f"{exc}\n".encode())
+                return 1
+            for raw in proc.stdout:  # type: ignore[union-attr]
+                logfh.write(raw)
+                m = re.search(r"(?:app|runtime)/([A-Za-z0-9_.\-]+)/", raw.decode("utf-8", "replace"))
+                if m:
+                    self._step(f"Aktualisiere {names.get(m.group(1), m.group(1))} …")
+            return proc.wait()
+
+    def _run(self, auto: bool, include_self: bool) -> None:
+        ok, updated, handed_over = True, 0, False
+        try:
+            before = self.summary()
+            updated = len(before["apps"]) + before["others"]
+            if DEMO:
+                for name in ("Google Chrome", "Laufzeitumgebung"):
+                    self._step(f"Aktualisiere {name} …")
+                    time.sleep(1.5)
+                self._demo_done = True
+            elif shutil.which("flatpak"):
+                names = {a["id"]: a["name"] for a in before["apps"]}
+                scopes = ["--user"]
+                if not auto or system_updates_allowed():
+                    scopes.append("--system")
+                prefix = _low_priority() if auto else []
+                for scope in scopes:
+                    self._step("Suche nach App-Updates …")
+                    if self._stream(prefix + ["flatpak", "update", scope, "-y", "--noninteractive"], names) != 0:
+                        ok = False
+                    # Leftover runtimes; failures here (e.g. "can't remove …") are harmless.
+                    self._step("Räume auf …")
+                    run_out(prefix + ["flatpak", "uninstall", scope, "--unused", "-y", "--noninteractive"], 900)
+                self.ctx.flatpaks.invalidate()
+            if include_self and before["self"]["available"]:
+                self._step(f"Lade NovaDeck {before['self']['latest']} …")
+                if DEMO:
+                    time.sleep(1.2)
+                else:
+                    with self.lock:
+                        if self.running:
+                            self.running["selfUpdate"] = True
+                    apply_self_update(reopen=bool(hub_ui_pids()) or not auto)
+                    handed_over = True
+                    return  # the installer takes over and restarts NovaDeck
+        except Exception as exc:  # noqa: BLE001
+            log(f"update failed: {exc!r}")
+            ok = False
+        finally:
+            with self.lock:
+                if not handed_over:
+                    self.running = None
+                    if ok:
+                        message = "Alles aktualisiert." if updated else "Alles war schon aktuell."
+                    else:
+                        message = "Nicht alles ließ sich aktualisieren. Später nochmal versuchen."
+                    self.last = {"ok": ok, "message": message, "at": time.time(), "auto": auto, "count": updated}
+        self.check()
+
+    def auto_allowed(self) -> bool:
+        if time.time() - self.ctx.last_cloud_launch < CLOUD_GAMING_PAUSE:
+            return False
+        bat = battery_status()
+        return bat is None or bat["plugged"] or bat["percent"] >= 30
+
+    def background(self) -> None:
+        time.sleep(25)
+        while True:
+            self.check()
+            settings = self.ctx.store.snapshot()["settings"]
+            pending = self.summary()
+            if (settings.get("autoUpdate") and not DEMO and self.auto_allowed()
+                    and (pending["apps"] or pending["others"])):
+                self.run(auto=True, include_self=False)
+            time.sleep(UPDATE_INTERVAL)
+
+
+# --------------------------------------------------------------------------
 # HTTP API
 # --------------------------------------------------------------------------
 
@@ -916,6 +1213,8 @@ class Context:
         self.flatpaks = FlatpakIndex()
         self.jobs = Jobs(self.flatpaks)
         self.brightness = Brightness()
+        self.updater = Updater(self)
+        self.last_cloud_launch = 0.0
         self._status_cache: tuple[float, dict] = (-1e9, {})
         self._status_lock = threading.Lock()
         self.shutdown_cb = None
@@ -933,6 +1232,9 @@ class Context:
             "/api/power": self.api_power,
             "/api/hub/close": self.api_hub_close,
             "/api/steam/add": self.api_steam_add,
+            "/api/updates/check": self.api_updates_check,
+            "/api/updates/run": self.api_updates_run,
+            "/api/whatsnew/seen": self.api_whatsnew_seen,
             "/api/quit": self.api_quit,
         }
 
@@ -956,6 +1258,8 @@ class Context:
             "browser": browser.public() if browser else None,
             "browsers": [b.public() for b in available_browsers(flatpaks)],
             "jobs": self.jobs.snapshot(),
+            "updates": self.updater.summary(),
+            "whatsNew": VERSION_INFO if parse_version(state["seenVersion"]) < parse_version(VERSION) else None,
             "capabilities": {
                 "gamemode": DEMO or bool(shutil.which("steamos-session-select") or shutil.which("dbus-send")),
                 "gamemodeLabel": "Gaming-Modus" if steamos else "Abmelden",
@@ -967,24 +1271,29 @@ class Context:
 
     def status(self) -> dict:
         with self._status_lock:
-            at, cached = self._status_cache
-            if time.monotonic() - at < 2.5:
-                return cached
-            if DEMO:
-                result = {k: (json.loads(json.dumps(v))) for k, v in DEMO_SYSTEM.items()}
-            else:
-                result = {
-                    "battery": battery_status(),
-                    "network": network_status(),
-                    "volume": volume_get(),
-                    "brightness": None,
-                    "storage": storage_status(),
-                }
-                level = self.brightness.get()
-                result["brightness"] = {"percent": level} if level is not None else None
-            result["jobs"] = self.jobs.snapshot()
-            self._status_cache = (time.monotonic(), result)
-            return result
+            at, result = self._status_cache
+            if time.monotonic() - at >= 2.5:
+                result = self._read_system()
+                self._status_cache = (time.monotonic(), result)
+        result = dict(result)
+        result["jobs"] = self.jobs.snapshot()
+        result["updates"] = self.updater.summary()
+        return result
+
+    def _read_system(self) -> dict:
+        if DEMO:
+            result = {k: (json.loads(json.dumps(v))) for k, v in DEMO_SYSTEM.items()}
+        else:
+            result = {
+                "battery": battery_status(),
+                "network": network_status(),
+                "volume": volume_get(),
+                "brightness": None,
+                "storage": storage_status(),
+            }
+            level = self.brightness.get()
+            result["brightness"] = {"percent": level} if level is not None else None
+        return result
 
     def _invalidate_status(self) -> None:
         with self._status_lock:
@@ -1015,6 +1324,8 @@ class Context:
         except LaunchError as exc:
             raise ApiError(409, exc.code, exc.message) from exc
         spawn(argv)
+        if app["category"] == "play" and app["kind"] == "web":
+            self.last_cloud_launch = time.time()
         keep = bool(app.get("keepHub")) or app["id"] == "keyboard"
         if not keep:
             self.store.update(lambda d: d.__setitem__("last", app["id"]))
@@ -1095,7 +1406,7 @@ class Context:
 
     def api_settings(self, body: dict) -> dict:
         changes = {}
-        for key in ("closeOnLaunch", "reducedEffects"):
+        for key in ("closeOnLaunch", "reducedEffects", "autoUpdate"):
             if key in body:
                 changes[key] = bool(body[key])
         if "browser" in body:
@@ -1151,6 +1462,18 @@ class Context:
         if self.store.snapshot()["settings"].get("closeOnLaunch") and not DEMO:
             threading.Timer(2.5, close_hub_ui).start()
         return {"steamName": name}
+
+    def api_updates_check(self, body: dict) -> dict:
+        self.updater.check_async()
+        return {}
+
+    def api_updates_run(self, body: dict) -> dict:
+        started = self.updater.run(auto=False, include_self=body.get("self", True) is not False)
+        return {"started": started, "updates": self.updater.summary()}
+
+    def api_whatsnew_seen(self, body: dict) -> dict:
+        self.store.update(lambda d: d.__setitem__("seenVersion", VERSION))
+        return {}
 
     def api_hub_close(self, body: dict) -> dict:
         if not DEMO:
@@ -1359,6 +1682,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         threading.Thread(target=httpd.shutdown, daemon=True).start()
 
     ctx.shutdown_cb = stop
+    threading.Thread(target=ctx.updater.background, daemon=True).start()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     print(f"NovaDeck {VERSION} läuft auf http://{HOST}:{PORT}/" + (" (Demo)" if DEMO else ""), flush=True)
@@ -1377,6 +1701,16 @@ def cmd_serve(args: argparse.Namespace) -> int:
 def cmd_hub(args: argparse.Namespace) -> int:
     if args.autostart:
         time.sleep(2.5)  # let Plasma finish starting up first
+        settings = Store(load_catalog()).snapshot()["settings"]
+        if settings.get("autoUpdate") and not DEMO:
+            remote = fetch_remote_version(timeout=5)
+            if remote and parse_version(remote["version"]) > parse_version(VERSION):
+                try:
+                    apply_self_update(reopen=True)  # the new version opens the hub when done
+                    print(f"NovaDeck wird auf {remote['version']} aktualisiert …")
+                    return 0
+                except Exception as exc:  # noqa: BLE001 - never block the hub because of an update
+                    log(f"self-update failed: {exc!r}")
     ensure_server()
     catalog = load_catalog()
     name = open_hub_ui(Store(catalog), FlatpakIndex())

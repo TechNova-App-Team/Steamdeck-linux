@@ -11,14 +11,35 @@
 #
 #  Usage:  ./install.sh [--yes] [--dry-run] [--no-theme] [--no-apps]
 #                       [--no-autostart] [--no-lock-screen]
+#  One-liner (Konsole):
+#    curl -fsSL https://raw.githubusercontent.com/TechNova-App-Team/Steamdeck-linux/HEAD/install.sh | bash
+#  (--update [--reopen] is used by NovaDeck's own self-update)
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-NOVA_VERSION="1.0.0"
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" && pwd)"
+NOVA_REPO="${NOVADECK_REPO:-TechNova-App-Team/Steamdeck-linux}"
+
+# Started with "curl … | bash"? Then fetch the whole package first.
+if [[ ! -f "$SRC_DIR/novadeck/novadeck.py" ]]; then
+  echo "  · Lade NovaDeck herunter …"
+  NOVA_TMP="$(mktemp -d)"
+  if ! curl -fsSL "https://codeload.github.com/$NOVA_REPO/tar.gz/${NOVADECK_REF:-HEAD}" | tar -xz -C "$NOVA_TMP"; then
+    echo "  ✗ Download fehlgeschlagen. Bist du mit dem Internet verbunden?" >&2
+    exit 1
+  fi
+  NOVA_SRC="$(find "$NOVA_TMP" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+  if { true < /dev/tty; } 2>/dev/null; then
+    exec bash "$NOVA_SRC/install.sh" "$@" < /dev/tty
+  fi
+  exec bash "$NOVA_SRC/install.sh" "$@"
+fi
+
+NOVA_VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$SRC_DIR/novadeck/version.json" 2>/dev/null | head -n 1)"
+NOVA_VERSION="${NOVA_VERSION:-?}"
 
 # Double-clicked in Dolphin? Re-open inside Konsole so you can follow along.
-if [[ ! -t 1 && -z "${NOVA_IN_TERMINAL:-}" ]] && command -v konsole >/dev/null 2>&1; then
+if [[ ! -t 1 && -z "${NOVA_IN_TERMINAL:-}" && " $* " != *" --update "* ]] && command -v konsole >/dev/null 2>&1; then
   export NOVA_IN_TERMINAL=1
   exec konsole --hold -e bash "$SRC_DIR/install.sh" "$@"
 fi
@@ -40,6 +61,8 @@ WANT_THEME=1
 WANT_APPS=1
 WANT_AUTOSTART=1
 WANT_NOLOCK=0
+UPDATE_MODE=0
+REOPEN=0
 SELECTED_APPS=(com.google.Chrome org.prismlauncher.PrismLauncher)
 
 # ---------------------------------------------------------------- output
@@ -75,10 +98,20 @@ for arg in "$@"; do
     --no-apps) WANT_APPS=0 ;;
     --no-autostart) WANT_AUTOSTART=0 ;;
     --no-lock-screen) WANT_NOLOCK=1 ;;
+    --update) UPDATE_MODE=1; ASSUME_YES=1 ;;
+    --reopen) REOPEN=1 ;;
     -h|--help) usage ;;
     *) fail "Unbekannte Option: $arg (siehe --help)" ;;
   esac
 done
+
+if (( UPDATE_MODE )); then
+  # Self-update: refresh the program, keep every choice you made before.
+  WANT_APPS=0
+  WANT_THEME=0
+  WANT_AUTOSTART=0
+  [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/novadeck-hub.desktop" ]] && WANT_AUTOSTART=1
+fi
 
 # ---------------------------------------------------------------- helpers
 KWRITE="$(command -v kwriteconfig6 || command -v kwriteconfig5 || true)"
@@ -259,7 +292,8 @@ EOF
   # Shortcut on the desktop, next to "Return to Gaming Mode".
   local desk
   desk="$(command -v xdg-user-dir >/dev/null 2>&1 && xdg-user-dir DESKTOP || echo "$HOME/Desktop")"
-  if [[ -d "$desk" && -f "$DATA_HOME/applications/novadeck-hub.desktop" ]]; then
+  if [[ -d "$desk" && -f "$DATA_HOME/applications/novadeck-hub.desktop" ]] \
+     && { (( ! UPDATE_MODE )) || [[ -f "$desk/NovaDeck.desktop" ]]; }; then
     run install -m 0755 "$DATA_HOME/applications/novadeck-hub.desktop" "$desk/NovaDeck.desktop"
     ok "Verknüpfung auf dem Desktop"
   fi
@@ -423,6 +457,15 @@ apply_plasma_desktop() {
   ok "Leiste aufgeräumt: NovaDeck, Steam, Browser, Dateien, App Store, Tastatur"
 }
 
+refresh_theme_files() {
+  [[ -f "$DATA_HOME/color-schemes/NovaGlass.colors" ]] || return 0
+  run cp "$SRC_DIR/theme/color-schemes/NovaGlass.colors" "$DATA_HOME/color-schemes/"
+  run cp "$SRC_DIR/theme/konsole/NovaGlass.colorscheme" "$SRC_DIR/theme/konsole/NovaGlass.profile" "$DATA_HOME/konsole/"
+  run rm -rf "$DATA_HOME/plasma/look-and-feel/com.technova.novadeck.desktop"
+  run cp -r "$SRC_DIR/theme/look-and-feel/com.technova.novadeck.desktop" "$DATA_HOME/plasma/look-and-feel/"
+  ok "Design-Dateien aktualisiert"
+}
+
 start_hub() {
   [[ -n "$PY" ]] || return 0
   (( DRY_RUN )) && return 0
@@ -446,6 +489,14 @@ summary() {
 main() {
   printf '\n%s  ✦  N O V A D E C K  %s%s\n' "$B$W" "$NOVA_VERSION" "$N"
   printf '  %sDein Steam-Deck-Desktop, aufgeräumt.%s\n' "$D" "$N"
+  if (( UPDATE_MODE )); then
+    preflight
+    install_files
+    refresh_theme_files
+    (( REOPEN )) && start_hub
+    printf '\n  NovaDeck %s ist installiert.\n' "$NOVA_VERSION"
+    return 0
+  fi
   preflight
   choose
   install_files

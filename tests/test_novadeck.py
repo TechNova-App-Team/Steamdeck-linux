@@ -70,6 +70,80 @@ class HelpersTest(unittest.TestCase):
             self.assertIn(fav, ids)
 
 
+class UpdateTest(unittest.TestCase):
+    def test_version_file_matches(self):
+        info = json.loads((ROOT / "novadeck" / "version.json").read_text())
+        self.assertEqual(nd.VERSION, info["version"])
+        self.assertTrue(info["notes"])
+        install = (ROOT / "install.sh").read_text()
+        self.assertIn("novadeck/version.json", install)
+
+    def test_parse_version(self):
+        self.assertGreater(nd.parse_version("1.10.0"), nd.parse_version("1.9.3"))
+        self.assertEqual(nd.parse_version("v2.0"), (2, 0))
+        self.assertEqual(nd.parse_version(""), (0,))
+
+    def _tar(self, entries):
+        import io
+        import tarfile
+        path = Path(tempfile.mkdtemp()) / "pkg.tar.gz"
+        with tarfile.open(path, "w:gz") as tar:
+            for name, data in entries:
+                info = tarfile.TarInfo(name)
+                if data is None:
+                    info.type = tarfile.SYMTYPE
+                    info.linkname = "/etc/passwd"
+                    tar.addfile(info)
+                else:
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+        return path
+
+    def test_safe_extract_accepts_github_layout(self):
+        archive = self._tar([("repo-abc/install.sh", b"#!/bin/sh\n"), ("repo-abc/novadeck/novadeck.py", b"x"),
+                             ("repo-abc/evil-link", None)])
+        dest = Path(tempfile.mkdtemp())
+        root = nd.safe_extract(archive, dest)
+        self.assertEqual(root.name, "repo-abc")
+        self.assertFalse((root / "evil-link").exists(), "symlinks must be skipped")
+
+    def test_safe_extract_rejects_traversal(self):
+        archive = self._tar([("repo/../../outside.txt", b"x")])
+        with self.assertRaises(ValueError):
+            nd.safe_extract(archive, Path(tempfile.mkdtemp()))
+        archive = self._tar([("/abs.txt", b"x")])
+        with self.assertRaises(ValueError):
+            nd.safe_extract(archive, Path(tempfile.mkdtemp()))
+
+    def test_safe_extract_needs_installer(self):
+        archive = self._tar([("repo/readme.txt", b"x")])
+        with self.assertRaises(ValueError):
+            nd.safe_extract(archive, Path(tempfile.mkdtemp()))
+
+    def test_remote_version_offline_is_none(self):
+        with mock.patch.object(nd.urllib.request, "urlopen", side_effect=OSError("offline")):
+            self.assertIsNone(nd.fetch_remote_version())
+
+    def test_pending_updates_parsing(self):
+        def fake_run(argv, **kwargs):
+            out = b"com.google.Chrome\norg.freedesktop.Platform.GL.default\n" if "--user" in argv else b"com.spotify.Client\n"
+            return mock.Mock(returncode=0, stdout=out)
+        listing = "com.google.Chrome\tGoogle Chrome\ncom.spotify.Client\tSpotify\n"
+        with mock.patch.object(nd, "run_out", return_value=listing), \
+                mock.patch.object(nd.subprocess, "run", side_effect=fake_run):
+            apps, others, worked = nd.flatpak_pending_updates()
+        self.assertEqual([a["name"] for a in apps], ["Google Chrome", "Spotify"])
+        self.assertEqual(others, 1)
+        self.assertTrue(worked)
+
+    def test_old_state_gets_whats_new(self):
+        nd.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        nd.STATE_FILE.write_text(json.dumps({"last": "netflix"}))
+        self.assertEqual(nd.Store(nd.load_catalog()).data["seenVersion"], "1.0.0")
+        nd.STATE_FILE.unlink()
+        self.assertEqual(nd.Store(nd.load_catalog()).data["seenVersion"], nd.VERSION)
+
+
 class BrowserTest(unittest.TestCase):
     def setUp(self):
         self.chrome = nd.Browser("com.google.Chrome", "Google Chrome", "flatpak", "chromium")
@@ -255,6 +329,28 @@ class ApiTest(unittest.TestCase):
                 threading.Event().wait(0.05)
                 self.ctx._invalidate_status()
             self.assertEqual(job.get("status"), "done")
+
+    def test_updates_flow(self):
+        with mock.patch.object(nd.time, "sleep", lambda s: None):
+            self.assertEqual(self.req("/api/updates/check", {})[0], 200)
+            for _ in range(100):
+                updates = self.req("/api/status")[1]["updates"]
+                if updates["checkedAt"] and not updates["checking"]:
+                    break
+                threading.Event().wait(0.02)
+            self.assertGreater(updates["count"], 0)
+            status, body = self.req("/api/updates/run", {"self": True})
+            self.assertTrue(body["started"])
+            for _ in range(100):
+                updates = self.req("/api/status")[1]["updates"]
+                if not updates["running"] and updates["last"]:
+                    break
+                threading.Event().wait(0.02)
+            self.assertTrue(updates["last"]["ok"])
+
+    def test_whats_new_seen(self):
+        self.req("/api/whatsnew/seen", {})
+        self.assertIsNone(self.req("/api/state")[1]["whatsNew"])
 
     def test_rejects_non_json(self):
         request = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/launch", data=b"id=netflix",

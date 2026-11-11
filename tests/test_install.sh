@@ -72,6 +72,16 @@ bash "$ROOT/install.sh" --yes > "$TMP/install2.log" 2>&1
 check "still exactly one ColorScheme record" test "$(grep -cP '^kdeglobals\tGeneral\tColorScheme\t' "$XDG_CONFIG_HOME/novadeck/restore.tsv")" = 1
 check "still the original value" grep -qP '^kdeglobals\tGeneral\tColorScheme\tVapor$' "$XDG_CONFIG_HOME/novadeck/restore.tsv"
 
+echo "== self-update mode keeps your choices"
+rm -f "$HOME/Desktop/NovaDeck.desktop"
+: > "$STUB_LOG"
+bash "$ROOT/install.sh" --update > "$TMP/update.log" 2>&1 || { cat "$TMP/update.log"; exit 1; }
+check "update: autostart kept" test -f "$XDG_CONFIG_HOME/autostart/novadeck-hub.desktop"
+check "update: deleted desktop shortcut stays deleted" test ! -e "$HOME/Desktop/NovaDeck.desktop"
+check "update: no app installs" bash -c "! grep -q 'flatpak install' '$STUB_LOG'"
+check "update: panel and wallpaper untouched" bash -c "! grep -q evaluateScript '$STUB_LOG'"
+check "update: version file written" test "$(cat "$P/VERSION")" = "$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/novadeck/version.json")"
+
 echo "== uninstall"
 : > "$STUB_LOG"
 bash "$P/uninstall.sh" --yes > "$TMP/uninstall.log" 2>&1 || { cat "$TMP/uninstall.log"; exit 1; }

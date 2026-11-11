@@ -16,6 +16,8 @@ Der **Gaming-Modus (Big Picture) bleibt genau so, wie er ist.**
 | **NovaDeck Hub** | Ein Vollbild-Startbildschirm wie bei einer Konsole. Bedienung mit Steuerkreuz, A und B, per Touchscreen oder Trackpad. Zeigt Uhrzeit, Akku, WLAN, Lautstärke und freien Speicher. |
 | **Apps als echte Apps** | Netflix, YouTube, Prime Video, Disney+, Twitch, Crunchyroll, YouTube Music, Fortnite (Cloud), Xbox Cloud und GeForce NOW öffnen sich als eigene App-Fenster ohne Browser-Leisten. |
 | **Ein-Klick-Installation** | Fehlt eine App (z. B. Spotify oder Discord), drückst du A auf der Kachel und NovaDeck installiert sie aus Flathub, ohne Passwort. |
+| **Updates ohne Nachdenken** | Die Kachel *Updates* aktualisiert Chrome, Minecraft-Launcher, Spotify & Co. mit einem Druck auf A. Automatisch läuft das auch leise im Hintergrund, aber nie während Cloud-Gaming und nicht bei schwachem Akku. |
+| **NovaDeck aktualisiert sich selbst** | Beim Wechsel in den Desktop-Modus holt sich NovaDeck die neueste Version von GitHub. Du musst nie wieder etwas herunterladen. |
 | **Glas-Design für den ganzen Desktop** | Farbschema „Nova Glass“, Glas-Wallpaper, durchscheinende Leiste mit Blur, eigener Startbildschirm beim Wechsel in den Desktop-Modus, Terminal im gleichen Look. |
 | **Aufgeräumte Leiste** | Unten nur noch das Wichtige: NovaDeck, Steam, Browser, Dateien, App Store, Tastatur, Einstellungen. |
 | **Schnellmenü** | Lautstärke, Helligkeit, Speicheranzeige, eigene Kacheln, Ausgeblendetes, Einstellungen. |
@@ -35,31 +37,25 @@ Der **Gaming-Modus (Big Picture) bleibt genau so, wie er ist.**
 ### 1. In den Desktop-Modus wechseln
 Steam-Taste → **Ein/Aus** → **Zum Desktop wechseln**.
 
-### 2. NovaDeck herunterladen
-Dieses Repository ist privat, du brauchst also deinen GitHub-Login.
+### 2. NovaDeck installieren
+Du brauchst kein GitHub-Konto. Such dir einen Weg aus:
 
-**Variante A: als ZIP (am einfachsten)**
-1. Diese Seite auf dem Deck öffnen und anmelden.
-2. Grüner Button **Code** → **Download ZIP**.
-3. Im Dateimanager (Dolphin) unter *Downloads*: Rechtsklick (L2) auf die ZIP → **Entpacken → Hierher entpacken**.
-
-**Variante B: mit Konsole**
+**Variante A: Einzeiler (am schnellsten)**
+Diese Seite auf dem Deck im Browser öffnen, die Zeile unten markieren und kopieren. Dann **Konsole** öffnen (App-Menü → System → Konsole), Rechtsklick (L2) → **Einfügen**, Enter.
 ```bash
-git clone https://github.com/TechNova-App-Team/Steamdeck-linux.git ~/NovaDeck
-```
-Git fragt nach Benutzername und Passwort. Als Passwort nimmst du ein [Personal Access Token](https://github.com/settings/tokens), nicht dein GitHub-Passwort.
-
-### 3. Installer starten
-Im entpackten Ordner auf **`install.sh`** tippen und **Ausführen** wählen. Ein Terminalfenster öffnet sich automatisch.
-
-Passiert nichts, fehlt nach dem Entpacken das Ausführen-Recht: Rechtsklick auf `install.sh` → **Eigenschaften → Berechtigungen → „Ausführbar“** anhaken. Oder einfach die Konsole nehmen (siehe unten).
-
-Alternativ in der Konsole:
-```bash
-cd ~/NovaDeck && bash install.sh
+curl -fsSL https://raw.githubusercontent.com/TechNova-App-Team/Steamdeck-linux/HEAD/install.sh | bash
 ```
 
-Es erscheint eine Liste, in der du auswählst, was eingerichtet wird:
+**Variante B: als ZIP**
+1. Grüner Button **Code** → **Download ZIP**.
+2. Im Dateimanager (Dolphin) unter *Downloads*: Rechtsklick (L2) auf die ZIP → **Entpacken → Hierher entpacken**.
+3. Im entpackten Ordner auf **`install.sh`** tippen und **Ausführen** wählen. Ein Terminalfenster öffnet sich automatisch.
+
+Passiert bei Schritt 3 nichts, fehlt nach dem Entpacken das Ausführen-Recht: Rechtsklick auf `install.sh` → **Eigenschaften → Berechtigungen → „Ausführbar“** anhaken. Oder in der Konsole im entpackten Ordner `bash install.sh` eingeben.
+
+### 3. Auswählen, was du willst
+
+Der Installer zeigt eine Liste, in der du auswählst, was eingerichtet wird:
 
 - ☑ Glas-Design für den Desktop
 - ☑ NovaDeck beim Wechsel in den Desktop-Modus automatisch öffnen
@@ -71,6 +67,8 @@ Es erscheint eine Liste, in der du auswählst, was eingerichtet wird:
 Alles, was du hier weglässt, kannst du später per Knopfdruck im Hub nachinstallieren.
 
 > **Tipp:** Wechsle nach der Installation einmal in den Gaming-Modus und zurück. Dann ist das Design überall aktiv, auch in schon geöffneten Programmen.
+
+Das war's. Ab jetzt aktualisiert sich NovaDeck selbst.
 
 ---
 
@@ -120,6 +118,15 @@ Die Kachel startet den **Prism Launcher**, den besten Minecraft-Launcher fürs D
 ### Netflix & Co.
 Die Streaming-Kacheln öffnen sich in Google Chrome als eigenes Fenster ohne Leisten. Du meldest dich einmal an und bleibst eingeloggt. Netflix streamt unter Linux in maximal 720p, für den 800p-Bildschirm des Decks reicht das.
 
+### Updates
+![Updates](docs/screenshots/updates.jpg)
+
+- **Kachel „Updates“** (Reihe *Werkzeuge*, auch im Schnellmenü): zeigt, was neu ist, und aktualisiert alles mit einem Druck auf A.
+- **Automatisch** (Standard, abschaltbar): Apps werden alle paar Stunden leise im Hintergrund aktualisiert, mit niedriger Priorität. Das passiert nicht in den 3 Stunden nach dem Start eines Cloud-Spiels (damit Fortnite nicht ruckelt) und nicht bei weniger als 30 % Akku ohne Ladekabel.
+- **NovaDeck selbst** prüft beim Wechsel in den Desktop-Modus, ob es auf GitHub eine neue Version gibt, installiert sie und zeigt dir einmal kurz, was neu ist.
+- Der rote „Aktualisieren“-Knopf in Chrome bringt auf dem Deck nichts: Chrome ist ein Flatpak und wird über Discover bzw. NovaDeck aktualisiert, nicht von sich selbst.
+- `.deb`-Dateien (z. B. Chrome von google.com) funktionieren auf SteamOS grundsätzlich nicht. Apps kommen immer aus Discover oder über NovaDeck.
+
 ### Eigene Kacheln
 Im Hub auf **Kachel hinzufügen** (Ende der Favoriten-Reihe) oder im Schnellmenü. Name und Adresse eintippen (die Bildschirmtastatur öffnest du mit dem Tastatur-Knopf oder Steam + X), fertig. Eigene Kacheln landen auch im App-Menü und lassen sich so ebenfalls zu Steam hinzufügen.
 
@@ -137,6 +144,9 @@ NovaDeck schreibt nur in deinen Home-Ordner:
 | Deine Einstellungen im Hub | `~/.config/novadeck/state.json` |
 | Sicherung deiner alten KDE-Einstellungen | `~/.config/novadeck/backup/<Datum>/` |
 | Liste aller geänderten Werte (für die Wiederherstellung) | `~/.config/novadeck/restore.tsv` |
+| Update-Protokoll | `~/.local/state/novadeck/update.log` |
+
+Die Selbst-Aktualisierung lädt den aktuellen Stand dieses Repositorys (Standard-Branch) über HTTPS von GitHub. Wer das nicht möchte, schaltet „Automatisch aktualisieren“ im Schnellmenü aus.
 
 Apps werden per Flatpak **für deinen Nutzer** installiert (wie im App Store Discover) und überstehen SteamOS-Updates. Für Google Chrome setzt NovaDeck außerdem zwei Dinge: Zugriff auf Controller für Cloud-Gaming (dasselbe macht Valve für Chrome) und, nur bei einem frischen Chrome, das Abschalten der lästigen KDE-Wallet-Passwortabfrage.
 

@@ -94,6 +94,10 @@
           <span class="toggle-text"><b>Beim Desktop-Start öffnen</b><small>Der Hub begrüßt dich im Desktop-Modus.</small></span>
           <span class="switch"></span>
         </button>
+        <button class="toggle" data-nav data-setting="autoUpdate">
+          <span class="toggle-text"><b>Automatisch aktualisieren</b><small>Apps leise im Hintergrund, NovaDeck beim Desktop-Start.</small></span>
+          <span class="switch"></span>
+        </button>
         <button class="toggle" data-nav data-setting="reducedEffects">
           <span class="toggle-text"><b>Effekte reduzieren</b><small>Weniger Glas &amp; Animation, spart Akku.</small></span>
           <span class="switch"></span>
@@ -108,7 +112,7 @@
       <div class="group grid-2">
         <button class="action" data-nav id="btn-add"><span data-icon="plus"></span>Kachel hinzufügen</button>
         <button class="action" data-nav id="btn-unhide"><span data-icon="eye"></span><span id="unhide-label">Ausgeblendete zeigen</span></button>
-        <button class="action" data-nav data-launch="files"><span data-icon="folder"></span>Dateien</button>
+        <button class="action" data-nav id="btn-updates"><span data-icon="update"></span><span id="updates-label">Updates</span></button>
         <button class="action" data-nav data-launch="settings"><span data-icon="sliders"></span>Einstellungen</button>
       </div>
 
@@ -150,6 +154,37 @@
       </div>
       <p class="form-error" id="add-error" hidden></p>
     </form>
+  </div>
+
+  <!-- Updates -->
+  <div class="modal layer" id="updates" role="dialog" aria-label="Updates" hidden>
+    <div class="modal-card updates-card">
+      <div class="upd-head">
+        <span class="upd-badge" data-icon="update"></span>
+        <div><h2 id="upd-title">Updates</h2><p class="muted" id="upd-sub">&nbsp;</p></div>
+      </div>
+      <div class="upd-list" id="upd-list"></div>
+      <div class="upd-progress" id="upd-progress" hidden><span class="spinner"></span><span id="upd-step">Läuft …</span></div>
+      <button class="toggle" data-nav data-setting="autoUpdate">
+        <span class="toggle-text"><b>Automatisch aktualisieren</b><small>Apps leise im Hintergrund, nie während Cloud-Gaming oder bei schwachem Akku. NovaDeck selbst beim Desktop-Start.</small></span>
+        <span class="switch"></span>
+      </button>
+      <div class="form-actions">
+        <button class="action" data-nav id="upd-check"><span data-icon="restart"></span>Neu suchen</button>
+        <button class="action ghost" data-nav data-close>Schließen</button>
+        <button class="action solid" data-nav id="upd-run">Alles aktualisieren</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- What's new -->
+  <div class="modal layer" id="whatsnew" role="dialog" aria-label="Neu in NovaDeck" hidden>
+    <div class="modal-card whatsnew-card">
+      <div class="eyebrow" id="wn-eyebrow">Update installiert</div>
+      <h2 id="wn-title">Neu in NovaDeck</h2>
+      <ul class="wn-list" id="wn-list"></ul>
+      <div class="form-actions"><button class="action solid" data-nav id="wn-ok">Alles klar</button></div>
+    </div>
   </div>
 
   <!-- Context menu -->
