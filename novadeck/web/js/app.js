@@ -27,6 +27,10 @@
     pollTimer: 0,
     jobsSeen: {},
     updRunning: false,
+    focusAt: 0,
+    lastScrollAt: -1e9,
+    pointerType: 'mouse',
+    titleTimer: 0,
     updTimer: 0,
     updFocusMoved: false,
     selfUpdating: false,
@@ -197,7 +201,7 @@
       return {
         key: 'add', icon: 'plus', name: 'Kachel hinzufügen', eyebrow: 'Eigene Web-App',
         info: 'Mach aus jeder Website eine App-Kachel: ARD Mediathek, Joyn, WhatsApp Web und alles andere.',
-        chips: `<span class="chip solid"><kbd>A</kbd>Hinzufügen</span>`,
+        chips: `<button class="chip solid" data-hero-start><kbd>A</kbd>Hinzufügen</button>`,
       };
     }
     const app = APPS.get(tile.dataset.id);
@@ -214,15 +218,15 @@
       } else if (u && u.checkedAt) info = `Alles ist aktuell. Zuletzt geprüft ${ago(u.checkedAt)}.`;
       return {
         key: `updates|${t.sub}|${info}`, icon: app.icon, name: app.name, eyebrow: `Werkzeuge · NovaDeck ${S.version}`, info,
-        chips: `<span class="chip solid"><kbd>A</kbd>${u && u.count ? 'Ansehen & aktualisieren' : 'Öffnen'}</span>`,
+        chips: `<button class="chip solid" data-hero-start><kbd>A</kbd>${u && u.count ? 'Ansehen & aktualisieren' : 'Öffnen'}</button>`,
       };
     }
     const job = jobFor(app);
     const eyebrow = app.id === S.last && app.available ? `Zuletzt gestartet · ${kindLabel(app)}` : `${catName(app.category)} · ${kindLabel(app)}`;
     let chips = '';
     if (job && job.status === 'running') chips += `<span class="chip plain">${icon('download')}Wird installiert …</span>`;
-    else if (app.available) chips += `<span class="chip solid"><kbd>A</kbd>Starten</span>`;
-    else if (app.installId) chips += `<span class="chip solid"><kbd>A</kbd>${app.kind === 'flatpak' ? 'Installieren' : 'Chrome installieren'}</span>`;
+    else if (app.available) chips += `<button class="chip solid" data-hero-start><kbd>A</kbd>Starten</button>`;
+    else if (app.installId) chips += `<button class="chip solid" data-hero-start><kbd>A</kbd>${app.kind === 'flatpak' ? 'Installieren' : 'Chrome installieren'}</button>`;
     chips += `<span class="chip"><kbd class="pad-trigger">L2</kbd>Optionen</span>`;
     if (isFav(app.id)) chips += `<span class="chip plain">${icon('star')}Favorit</span>`;
     return { key: `${app.id}|${eyebrow}|${chips.length}`, icon: app.icon, name: app.name, eyebrow, info: app.info || app.subtitle, chips };
@@ -244,6 +248,7 @@
   function setFocus(el, opts = {}) {
     if (!el) return;
     if (ui.focus && ui.focus !== el) ui.focus.classList.remove('is-focus');
+    if (ui.focus !== el) ui.focusAt = performance.now();
     ui.focus = el;
     el.classList.add('is-focus');
     if (document.activeElement !== el) el.focus({ preventScroll: true });
@@ -479,6 +484,7 @@
       return;
     }
     showLaunch(app.icon, app.name, app.kind === 'web' ? 'Öffnet als App-Fenster …' : 'Wird gestartet …');
+    markLaunching();
     try {
       const res = await api.post('/api/launch', { id });
       S.last = id;
@@ -486,12 +492,25 @@
         $('#launch-sub').textContent = 'Viel Spaß! Der Hub macht Platz.';
         setTimeout(hideLaunch, 8000);
       } else {
-        setTimeout(hideLaunch, 1700);
+        if (res.returns) $('#launch-sub').textContent = 'Schließ die App, und du bist sofort wieder hier.';
+        setTimeout(hideLaunch, 2200);
       }
     } catch (e) {
       hideLaunch();
       toast('info', e.message || 'Start fehlgeschlagen');
     }
+  }
+
+  // The KWin helper watches our window title: "NovaDeck · Start" means "an app is
+  // starting from the hub", so the hub steps aside and comes back when it closes.
+  function markLaunching() {
+    document.title = 'NovaDeck · Start';
+    clearTimeout(ui.titleTimer);
+    ui.titleTimer = setTimeout(() => { document.title = 'NovaDeck'; }, 12000);
+  }
+
+  function activateTile(tile) {
+    return tile.dataset.action === 'add' ? openAdd() : launchApp(tile.dataset.id, tile);
   }
 
   async function installApp(app) {
@@ -1057,7 +1076,10 @@
     hoverTarget = el;
   }, { passive: true });
 
+  document.addEventListener('scroll', () => { ui.lastScrollAt = performance.now(); }, { capture: true, passive: true });
+
   document.addEventListener('pointerdown', (e) => {
+    ui.pointerType = e.pointerType || 'mouse';
     const layer = scope();
     if (!layer) return;
     if ((layer.id === 'ctx' || layer.id === 'drawer') && !layer.contains(e.target)) {
@@ -1080,8 +1102,21 @@
     const el = e.target.closest('button');
     if (!el || ui.launching) return;
     if (el.matches('[data-tile]')) {
+      // Taps and clicks: the first one only selects (no more accidental launches while
+      // scrolling), a tap on the already selected tile starts it. A/Enter always start.
+      if (e.detail > 0) {
+        const now = performance.now();
+        const settled = el === ui.focus && now - ui.focusAt > (ui.pointerType === 'mouse' ? 120 : 0);
+        if (!settled || now - ui.lastScrollAt < 350) {
+          setFocus(el, { noScroll: true });
+          return undefined;
+        }
+      }
       setFocus(el, { noScroll: true });
-      return el.dataset.action === 'add' ? openAdd() : launchApp(el.dataset.id, el);
+      return activateTile(el);
+    }
+    if (el.matches('[data-hero-start]')) {
+      return ui.focus && ui.focus.matches('[data-tile]') ? activateTile(ui.focus) : undefined;
     }
     if (el.matches('[data-tab]')) return goRow(el.dataset.tab);
     if (el.matches('[data-close]')) return closeLayer();
@@ -1212,7 +1247,12 @@
     tickClock();
     setInterval(tickClock, 1000);
     pollStatus();
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pollStatus(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      document.title = 'NovaDeck';
+      if (ui.launching && !ui.selfUpdating) hideLaunch();
+      pollStatus();
+    });
 
     const start = (S.last && (findTile(S.last, 'fav') || findTile(S.last))) || rowDefault($('.row'));
     setFocus(start);

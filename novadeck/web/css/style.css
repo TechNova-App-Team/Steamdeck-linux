@@ -198,6 +198,8 @@ svg.i { width: 1em; height: 1em; display: block; flex: none; }
   background: var(--glass); border: 1px solid var(--line);
 }
 .chip.solid { background: var(--ink); color: var(--on-ink); border-color: transparent; box-shadow: 0 0 22px rgba(255, 255, 255, 0.3); }
+button.chip { cursor: pointer; font: inherit; font-size: 13px; font-weight: 650; }
+button.chip:active { transform: scale(0.97); }
 .chip.plain { padding-left: 12px; }
 .chip kbd { width: 22px; height: 22px; font-size: 11px; }
 .chip.solid kbd { border-color: var(--on-ink); color: var(--on-ink); }

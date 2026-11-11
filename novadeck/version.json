@@ -1,9 +1,9 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "notes": [
-    "Deutlich flüssiger: Der Hub rechnet nicht mehr ständig im Hintergrund, Eingaben kommen sofort an.",
-    "Updates prüft gründlicher und kann jederzeit „Jetzt aktualisieren“, auch wenn die Suche nichts findet.",
-    "Chrome zeigt keine „Reinstall Chrome“-Meldung mehr. Die führte nur zu einer .deb-Datei, die auf dem Deck nicht funktioniert. NovaDeck hält Chrome selbst aktuell.",
-    "Nach einem Chrome-Update sagt dir NovaDeck, wann du Chrome einmal neu starten solltest."
+    "Der Hub bleibt jetzt offen: Er wartet im Hintergrund und ist automatisch wieder da, sobald du die App schließt. Verklickt? App zu, fertig.",
+    "Keine Fehlstarts mehr beim Scrollen: Antippen wählt eine Kachel nur aus, nochmal antippen (oder A) startet sie.",
+    "Den großen „Starten“-Knopf oben kannst du jetzt direkt antippen.",
+    "Tippst du auf das NovaDeck-Symbol, während der Hub schon offen ist, holt er sich einfach nach vorne statt neu zu starten."
   ]
 }

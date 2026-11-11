@@ -186,7 +186,8 @@ def load_catalog() -> dict:
         return json.load(fh)
 
 
-DEFAULT_SETTINGS = {"closeOnLaunch": True, "reducedEffects": False, "autoUpdate": True, "browser": None}
+DEFAULT_SETTINGS = {"closeOnLaunch": False, "reducedEffects": False, "autoUpdate": True, "browser": None}
+STATE_SCHEMA = 2
 CUSTOM_CATEGORIES = {"play", "watch", "social", "tools"}
 
 
@@ -235,6 +236,7 @@ class Store:
             "settings": dict(DEFAULT_SETTINGS),
             "last": None,
             "seenVersion": VERSION,
+            "schema": STATE_SCHEMA,
         }
 
     def _load(self) -> dict:
@@ -262,6 +264,10 @@ class Store:
             data["last"] = saved["last"]
         # Existing installs from before 1.1 did not track this: show them what's new.
         data["seenVersion"] = saved["seenVersion"] if isinstance(saved.get("seenVersion"), str) else "1.0.0"
+        if not isinstance(saved.get("schema"), int) or saved["schema"] < 2:
+            # 1.3: the hub now waits in the background instead of closing on every launch.
+            data["settings"]["closeOnLaunch"] = False
+        data["schema"] = STATE_SCHEMA
         return data
 
     def save(self) -> None:
@@ -818,6 +824,36 @@ def close_hub_ui(wait: float = 2.0) -> bool:
     return True
 
 
+KWIN_DIR = APP_DIR / "kwin"
+
+
+def kwin_run_script(path: Path, name: str) -> bool:
+    """Loads (or reloads) a KWin script by name and runs it. False if KWin isn't reachable."""
+    if DEMO or not shutil.which("dbus-send") or not path.is_file():
+        return False
+    base = ["dbus-send", "--session", "--dest=org.kde.KWin"]
+    run_out(base + ["--print-reply", "/Scripting", "org.kde.kwin.Scripting.unloadScript", f"string:{name}"], 3)
+    out = run_out(base + ["--print-reply=literal", "/Scripting", "org.kde.kwin.Scripting.loadScript",
+                          f"string:{path}", f"string:{name}"], 3)
+    m = re.search(r"int32\s+(-?\d+)", out)
+    if not m or int(m.group(1)) < 0:
+        return False
+    sid = m.group(1)
+    for obj in (f"/Scripting/Script{sid}", f"/{sid}"):  # Plasma 6, Plasma 5
+        if "method return" in run_out(base + ["--print-reply", obj, "org.kde.kwin.Script.run"], 3):
+            return True
+    return "method return" in run_out(base + ["--print-reply", "/Scripting", "org.kde.kwin.Scripting.start"], 3)
+
+
+def load_window_helper() -> bool:
+    """Keeps the hub in the background while an app runs and brings it back afterwards."""
+    return kwin_run_script(KWIN_DIR / "novadeck-helper.js", "novadeck-helper")
+
+
+def focus_hub_window() -> bool:
+    return kwin_run_script(KWIN_DIR / "novadeck-focus.js", "novadeck-focus")
+
+
 def open_hub_ui(store: Store, index: FlatpakIndex) -> str:
     close_hub_ui()
     url = f"http://{HOST}:{PORT}/"
@@ -1261,6 +1297,7 @@ class Context:
         self.brightness = Brightness()
         self.updater = Updater(self)
         self.last_cloud_launch = 0.0
+        self.window_helper = False
         self._status_cache: tuple[float, dict] = (-1e9, {})
         self._status_lock = threading.Lock()
         self.shutdown_cb = None
@@ -1281,6 +1318,7 @@ class Context:
             "/api/updates/check": self.api_updates_check,
             "/api/updates/run": self.api_updates_run,
             "/api/whatsnew/seen": self.api_whatsnew_seen,
+            "/api/helper/reload": self.api_helper_reload,
             "/api/quit": self.api_quit,
         }
 
@@ -1312,6 +1350,7 @@ class Context:
                 "power": DEMO or bool(shutil.which("systemctl")),
                 "flatpak": FlatpakIndex.available(),
                 "steam": DEMO or bool(shutil.which("steam") and shutil.which("xdg-open")),
+                "windowHelper": self.window_helper or DEMO,
             },
         }
 
@@ -1375,10 +1414,12 @@ class Context:
         keep = bool(app.get("keepHub")) or app["id"] == "keyboard"
         if not keep:
             self.store.update(lambda d: d.__setitem__("last", app["id"]))
-        closing = bool(state["settings"].get("closeOnLaunch")) and not keep and not DEMO
+        # Without the KWin helper the app could open behind the full-screen hub, so close it.
+        wants_close = bool(state["settings"].get("closeOnLaunch")) or not (self.window_helper or DEMO)
+        closing = wants_close and not keep and not DEMO
         if closing:
             threading.Timer(1.8, close_hub_ui).start()
-        return {"closing": closing}
+        return {"closing": closing, "returns": not closing and not keep}
 
     def api_install(self, body: dict) -> dict:
         app = self._app(body)
@@ -1516,6 +1557,10 @@ class Context:
     def api_updates_run(self, body: dict) -> dict:
         started = self.updater.run(auto=False, include_self=body.get("self", True) is not False)
         return {"started": started, "updates": self.updater.summary()}
+
+    def api_helper_reload(self, body: dict) -> dict:
+        self.window_helper = load_window_helper()
+        return {"helper": self.window_helper}
 
     def api_whatsnew_seen(self, body: dict) -> dict:
         self.store.update(lambda d: d.__setitem__("seenVersion", VERSION))
@@ -1729,6 +1774,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     ctx.shutdown_cb = stop
     threading.Thread(target=ctx.updater.background, daemon=True).start()
+
+    def helper() -> None:
+        ctx.window_helper = load_window_helper()
+        log(f"KWin window helper: {'ok' if ctx.window_helper else 'not available'}")
+    threading.Thread(target=helper, daemon=True).start()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     print(f"NovaDeck {VERSION} läuft auf http://{HOST}:{PORT}/" + (" (Demo)" if DEMO else ""), flush=True)
@@ -1758,6 +1808,10 @@ def cmd_hub(args: argparse.Namespace) -> int:
                 except Exception as exc:  # noqa: BLE001 - never block the hub because of an update
                     log(f"self-update failed: {exc!r}")
     ensure_server()
+    _post_local("/api/helper/reload", {})
+    if hub_ui_pids() and focus_hub_window():
+        print("NovaDeck ist schon offen und jetzt vorne.")
+        return 0
     catalog = load_catalog()
     name = open_hub_ui(Store(catalog), FlatpakIndex())
     print(f"NovaDeck geöffnet ({name}).")

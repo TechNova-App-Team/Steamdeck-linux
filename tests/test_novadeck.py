@@ -147,6 +147,32 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual((apps, others, failed), ([], 0, ["system"]))
         self.assertIn("Unable to load summary", (nd.STATE_DIR / "update.log").read_text())
 
+    def test_old_state_no_longer_closes_hub(self):
+        nd.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        nd.STATE_FILE.write_text(json.dumps({"settings": {"closeOnLaunch": True}}))
+        self.assertFalse(nd.Store(nd.load_catalog()).data["settings"]["closeOnLaunch"])
+        nd.STATE_FILE.write_text(json.dumps({"settings": {"closeOnLaunch": True}, "schema": 2}))
+        self.assertTrue(nd.Store(nd.load_catalog()).data["settings"]["closeOnLaunch"], "explicit choice kept")
+        nd.STATE_FILE.unlink()
+
+    def test_kwin_script_loading(self):
+        calls = []
+
+        def fake(argv, timeout=3.0):
+            calls.append(argv)
+            if "org.kde.kwin.Scripting.loadScript" in argv:
+                return "   int32 7\n"
+            if "/Scripting/Script7" in argv:
+                return "method return time=1 sender=:1.5\n"
+            return ""
+        with mock.patch.object(nd, "DEMO", False), mock.patch.object(nd, "run_out", side_effect=fake), \
+                mock.patch.object(nd.shutil, "which", return_value="/usr/bin/dbus-send"):
+            self.assertTrue(nd.load_window_helper())
+        self.assertTrue(any("org.kde.kwin.Scripting.unloadScript" in c for c in calls), "old copy unloaded first")
+        with mock.patch.object(nd, "DEMO", False), mock.patch.object(nd, "run_out", return_value=""), \
+                mock.patch.object(nd.shutil, "which", return_value="/usr/bin/dbus-send"):
+            self.assertFalse(nd.load_window_helper(), "no KWin -> fallback")
+
     def test_old_state_gets_whats_new(self):
         nd.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         nd.STATE_FILE.write_text(json.dumps({"last": "netflix"}))
@@ -286,6 +312,14 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 404)
         status, _ = self.req("/%2e%2e/catalog.json")
         self.assertEqual(status, 404)
+
+    def test_launch_keeps_hub_open(self):
+        status, body = self.req("/api/launch", {"id": "youtube"})
+        self.assertEqual(status, 200)
+        self.assertFalse(body["closing"])
+        self.assertTrue(body["returns"])
+        status, body = self.req("/api/launch", {"id": "keyboard"})
+        self.assertFalse(body["returns"], "keyboard never hides the hub")
 
     def test_state_and_launch(self):
         status, state = self.req("/api/state")
