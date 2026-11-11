@@ -50,5 +50,10 @@
   "chat": "<path d='M4 6.75A2.75 2.75 0 0 1 6.75 4h10.5A2.75 2.75 0 0 1 20 6.75v7.5A2.75 2.75 0 0 1 17.25 17H11l-4.5 3.25V17h0A2.75 2.75 0 0 1 4 14.25z'/><path d='M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01'/>",
   "camera": "<path d='M4.75 7.75h3l1.6-2.5h5.3l1.6 2.5h3A1.75 1.75 0 0 1 21 9.5v8.75A1.75 1.75 0 0 1 19.25 20H4.75A1.75 1.75 0 0 1 3 18.25V9.5a1.75 1.75 0 0 1 1.75-1.75z'/><circle cx='12' cy='13.5' r='3.5'/>",
   "update": "<path d='M20 11.5A8 8 0 0 0 5.6 6.9L4 8.5'/><path d='M4 4v4.5h4.5'/><path d='M4 12.5a8 8 0 0 0 14.4 4.6l1.6-1.6'/><path d='M20 20v-4.5h-4.5'/>",
-  "refresh": "<path d='M4 12a8 8 0 1 0 2.35-5.65L4 8.7'/><path d='M4 4v4.7h4.7'/>"
+  "refresh": "<path d='M4 12a8 8 0 1 0 2.35-5.65L4 8.7'/><path d='M4 4v4.7h4.7'/>",
+  "media-play": "<path d='M7.5 4.8v14.4L19 12z' fill='currentColor'/>",
+  "media-pause": "<rect x='6.5' y='5' width='3.6' height='14' rx='1' fill='currentColor' stroke='none'/><rect x='13.9' y='5' width='3.6' height='14' rx='1' fill='currentColor' stroke='none'/>",
+  "media-next": "<path d='M5.5 5.5v13l9.5-6.5z' fill='currentColor'/><path d='M18.5 5.5v13'/>",
+  "media-prev": "<path d='M18.5 5.5v13L9 12z' fill='currentColor'/><path d='M5.5 5.5v13'/>",
+  "phone": "<rect x='6.5' y='2.75' width='11' height='18.5' rx='2.75'/><path d='M10.5 18h3'/>"
 }

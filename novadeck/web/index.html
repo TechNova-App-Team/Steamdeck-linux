@@ -18,6 +18,8 @@
     <div class="grain"></div>
   </div>
 
+  <div class="stage" aria-hidden="true"><div class="stage-img"></div><div class="stage-img"></div></div>
+
   <header class="topbar">
     <div class="brand">
       <span class="brand-mark" data-icon="nova"></span>
@@ -25,6 +27,7 @@
     </div>
     <nav class="tabs" id="tabs" aria-label="Bereiche"></nav>
     <div class="status" id="status">
+      <span class="stat" id="stat-phone" hidden></span>
       <span class="stat" id="stat-net" hidden></span>
       <span class="stat" id="stat-vol" hidden></span>
       <span class="stat" id="stat-bat" hidden></span>
@@ -48,6 +51,11 @@
       <div class="greet" id="greet">Hallo.</div>
       <div class="clock" id="clock">--:--</div>
       <div class="date" id="date">&nbsp;</div>
+      <div class="np" id="np" hidden>
+        <span class="np-art" id="np-art"></span>
+        <span class="np-text"><b id="np-title"></b><small id="np-artist"></small><span class="np-bar"><i id="np-bar"></i></span></span>
+        <button class="np-btn" id="np-toggle" aria-label="Wiedergabe umschalten"></button>
+      </div>
     </div>
   </section>
 
@@ -70,6 +78,17 @@
       <button class="icon-btn small" data-nav data-close title="Schließen" aria-label="Schließen"><span data-icon="x"></span></button>
     </div>
     <div class="drawer-body">
+      <div class="group music" id="group-music" hidden>
+        <div class="music-now">
+          <span class="np-art big" id="dm-art"></span>
+          <span class="np-text"><small id="dm-app">Läuft gerade</small><b id="dm-title"></b><small id="dm-artist"></small></span>
+        </div>
+        <div class="music-controls">
+          <button class="icon-btn" data-nav data-media="previous" aria-label="Zurück"><span data-icon="media-prev"></span></button>
+          <button class="icon-btn play" data-nav data-media="playpause" id="dm-toggle" aria-label="Wiedergabe"><span data-icon="media-pause"></span></button>
+          <button class="icon-btn" data-nav data-media="next" aria-label="Weiter"><span data-icon="media-next"></span></button>
+        </div>
+      </div>
       <div class="group">
         <div class="slider-row" id="row-volume">
           <button class="icon-btn small" data-nav id="btn-mute" aria-label="Stumm schalten"><span data-icon="volume"></span></button>
@@ -96,6 +115,10 @@
         </button>
         <button class="toggle" data-nav data-setting="autoUpdate">
           <span class="toggle-text"><b>Automatisch aktualisieren</b><small>Apps leise im Hintergrund, NovaDeck beim Desktop-Start.</small></span>
+          <span class="switch"></span>
+        </button>
+        <button class="toggle" data-nav data-setting="sounds">
+          <span class="toggle-text"><b>Sounds</b><small>Dezente Klicks beim Navigieren und Starten.</small></span>
           <span class="switch"></span>
         </button>
         <button class="toggle" data-nav data-setting="reducedEffects">
@@ -187,6 +210,29 @@
     </div>
   </div>
 
+  <!-- Keyboard: Steam keyboard or phone -->
+  <div class="modal layer" id="keys" role="dialog" aria-label="Tastatur" hidden>
+    <div class="modal-card keys-card">
+      <h2>Tastatur</h2>
+      <div class="keys-grid">
+        <button class="power-btn" data-nav id="kb-steam"><span data-icon="keyboard"></span><b>Steam-Tastatur</b><small>Auf dem Bildschirm · auch mit Steam + X</small></button>
+        <div class="phone-card">
+          <div class="qr" id="kb-qr"><span class="spinner"></span></div>
+          <div class="phone-text">
+            <b>Handy als Tastatur</b>
+            <small id="kb-state">Scanne den Code mit der Kamera deines Handys.</small>
+            <span class="kb-url" id="kb-url"></span>
+          </div>
+        </div>
+      </div>
+      <p class="muted">Dein Handy muss im selben WLAN sein. Die Verbindung bleibt, bis du sie trennst oder 45 Minuten nichts passiert.</p>
+      <div class="form-actions">
+        <button class="action ghost" data-nav id="kb-off"><span data-icon="x"></span>Handy trennen</button>
+        <button class="action solid" data-nav data-close>Fertig</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Context menu -->
   <div class="ctx layer" id="ctx" role="menu" hidden></div>
 
@@ -207,6 +253,7 @@
     </div>
   </div>
 
+  <script src="js/vendor/qrcode.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

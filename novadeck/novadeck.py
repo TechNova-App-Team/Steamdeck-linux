@@ -31,6 +31,12 @@ import urllib.request
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
+import library as gamelib  # noqa: E402  (sibling modules next to this script)
+import media as nowplaying  # noqa: E402
+import phone as phonekeys  # noqa: E402
 WEB_DIR = APP_DIR / "web"
 CATALOG_FILE = APP_DIR / "catalog.json"
 HOME = Path.home()
@@ -186,7 +192,8 @@ def load_catalog() -> dict:
         return json.load(fh)
 
 
-DEFAULT_SETTINGS = {"closeOnLaunch": False, "reducedEffects": False, "autoUpdate": True, "browser": None}
+DEFAULT_SETTINGS = {"closeOnLaunch": False, "reducedEffects": False, "autoUpdate": True, "sounds": True,
+                    "browser": None}
 STATE_SCHEMA = 2
 CUSTOM_CATEGORIES = {"play", "watch", "social", "tools"}
 
@@ -288,8 +295,8 @@ class Store:
             return self.snapshot()
 
 
-def all_apps(catalog: dict, state: dict) -> list[dict]:
-    apps = [dict(a) for a in catalog["apps"]]
+def all_apps(catalog: dict, state: dict, library: list[dict] | None = None) -> list[dict]:
+    apps = [dict(a) for a in catalog["apps"]] + [dict(i) for i in (library or [])]
     for c in state.get("custom", []):
         host = urllib.parse.urlsplit(c["url"]).netloc.removeprefix("www.")
         apps.append({
@@ -301,8 +308,8 @@ def all_apps(catalog: dict, state: dict) -> list[dict]:
     return apps
 
 
-def find_app(catalog: dict, state: dict, app_id: str) -> dict | None:
-    return next((a for a in all_apps(catalog, state) if a["id"] == app_id), None)
+def find_app(catalog: dict, state: dict, app_id: str, library: list[dict] | None = None) -> dict | None:
+    return next((a for a in all_apps(catalog, state, library) if a["id"] == app_id), None)
 
 
 # --------------------------------------------------------------------------
@@ -443,12 +450,21 @@ def describe_app(app: dict, flatpaks: set[str], browser: Browser | None) -> dict
         reason = "" if available else "Auf diesem System nicht vorhanden"
     elif kind == "updates":
         available = True
+    elif kind == "steam":
+        available = DEMO or (shutil.which("steam") is not None and shutil.which("xdg-open") is not None)
+        reason = "" if available else "Steam fehlt"
+    elif kind == "minecraft":
+        available = DEMO or gamelib.PRISM_FLATPAK in flatpaks or shutil.which("prismlauncher") is not None
+        reason = "" if available else "Prism Launcher fehlt"
     elif kind == "uri":
         req = app.get("requires")
         available = DEMO or (shutil.which("xdg-open") is not None and (not req or shutil.which(req) is not None))
         reason = "" if available else "Steam läuft nicht"
     public = {k: app.get(k) for k in ("id", "name", "subtitle", "category", "icon", "kind", "info", "flatpak", "url")}
     public["steamName"] = app.get("steamName") or app["name"]
+    for key in ("cover", "hero", "lastPlayed", "library"):
+        if app.get(key) is not None:
+            public[key] = app[key]
     public.update({
         "custom": bool(app.get("custom")),
         "available": available,
@@ -477,6 +493,8 @@ def launch_argv(app: dict, settings: dict, flatpaks: set[str], gaming: bool) -> 
         return [exe or app["command"][0], *app["command"][1:]]
     if kind == "uri":
         return ["xdg-open", app["uri"]]
+    if kind in ("steam", "minecraft"):
+        return gamelib.launch_argv({"kind": kind, "appid": app.get("appid"), "instance": app.get("instance")})
     raise LaunchError("unknown", "Unbekannter App-Typ.")
 
 
@@ -1296,6 +1314,9 @@ class Context:
         self.jobs = Jobs(self.flatpaks)
         self.brightness = Brightness()
         self.updater = Updater(self)
+        self.library = gamelib.Library(CACHE_DIR, demo=DEMO)
+        self.media = nowplaying.NowPlaying(secret=token, demo=DEMO)
+        self.phone = phonekeys.PhoneKeyboard(demo=DEMO)
         self.last_cloud_launch = 0.0
         self.window_helper = False
         self._status_cache: tuple[float, dict] = (-1e9, {})
@@ -1319,6 +1340,8 @@ class Context:
             "/api/updates/run": self.api_updates_run,
             "/api/whatsnew/seen": self.api_whatsnew_seen,
             "/api/helper/reload": self.api_helper_reload,
+            "/api/media": self.api_media,
+            "/api/phone": self.api_phone,
             "/api/quit": self.api_quit,
         }
 
@@ -1327,7 +1350,7 @@ class Context:
         flatpaks = self.flatpaks.installed()
         state = self.store.snapshot()
         browser = pick_browser(state["settings"], flatpaks)
-        apps = [describe_app(a, flatpaks, browser) for a in all_apps(self.catalog, state)]
+        apps = [describe_app(a, flatpaks, browser) for a in all_apps(self.catalog, state, self.library.scan())]
         steamos = is_steamos() or DEMO
         return {
             "version": VERSION,
@@ -1363,6 +1386,7 @@ class Context:
         result = dict(result)
         result["jobs"] = self.jobs.snapshot()
         result["updates"] = self.updater.summary()
+        result["phone"] = self.phone.status()
         return result
 
     def _read_system(self) -> dict:
@@ -1389,7 +1413,7 @@ class Context:
         app_id = body.get("id")
         if not isinstance(app_id, str):
             raise ApiError(400, "bad_request", "id fehlt")
-        app = find_app(self.catalog, self.store.snapshot(), app_id)
+        app = find_app(self.catalog, self.store.snapshot(), app_id, self.library.scan())
         if not app:
             raise ApiError(404, "unknown_app", "Diese Kachel gibt es nicht mehr.")
         return app
@@ -1493,7 +1517,7 @@ class Context:
 
     def api_settings(self, body: dict) -> dict:
         changes = {}
-        for key in ("closeOnLaunch", "reducedEffects", "autoUpdate"):
+        for key in ("closeOnLaunch", "reducedEffects", "autoUpdate", "sounds"):
             if key in body:
                 changes[key] = bool(body[key])
         if "browser" in body:
@@ -1557,6 +1581,20 @@ class Context:
     def api_updates_run(self, body: dict) -> dict:
         started = self.updater.run(auto=False, include_self=body.get("self", True) is not False)
         return {"started": started, "updates": self.updater.summary()}
+
+    def api_phone(self, body: dict) -> dict:
+        action = body.get("action")
+        if action == "start":
+            return {"phone": self.phone.start()}
+        if action == "stop":
+            return {"phone": self.phone.stop()}
+        raise ApiError(400, "bad_action")
+
+    def api_media(self, body: dict) -> dict:
+        if not self.media.control(str(body.get("action", ""))):
+            raise ApiError(409, "no_player", "Gerade läuft keine Musik.")
+        time.sleep(0.25)  # give the player a moment to update its state
+        return {"player": self.media.current()}
 
     def api_helper_reload(self, body: dict) -> dict:
         self.window_helper = load_window_helper()
@@ -1628,6 +1666,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if path == "/api/ping":
             return self._json(200, {"app": "novadeck", "version": VERSION, "pid": os.getpid(), "dir": str(APP_DIR)})
+        if path.startswith("/media/art/"):
+            found = self.ctx.media.art(path.rsplit("/", 1)[-1])
+            if not found:
+                return self._send(404, b"", MIME[".txt"])
+            return self._send(200, found[0], found[1], {"Cache-Control": "max-age=3600"})
+        if path.startswith("/art/"):
+            parts = path.split("/")
+            found = self.ctx.library.art_file(parts[2], parts[3]) if len(parts) == 4 else None
+            if not found:
+                return self._send(404, b"", MIME[".txt"], {"Cache-Control": "max-age=600"})
+            return self._send(200, found[0], found[1], {"Cache-Control": "max-age=86400"})
         if path.startswith("/api/"):
             if not self._authed():
                 return self._json(401, {"ok": False, "error": "unauthorized"})
@@ -1635,6 +1684,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json(200, self.ctx.full_state())
             if path == "/api/status":
                 return self._json(200, self.ctx.status())
+            if path == "/api/phone":
+                return self._json(200, {"phone": self.ctx.phone.status()})
+            if path == "/api/media":
+                return self._json(200, {"player": self.ctx.media.current()})
             return self._json(404, {"ok": False, "error": "not_found"})
         self._static(path)
 
@@ -1785,6 +1838,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     try:
         httpd.serve_forever(poll_interval=0.5)
     finally:
+        ctx.phone.stop()
         httpd.server_close()
         for name in ("token", "pid"):
             try:
@@ -1822,7 +1876,7 @@ def cmd_launch(args: argparse.Namespace) -> int:
     catalog = load_catalog()
     store = Store(catalog)
     state = store.snapshot()
-    app = find_app(catalog, state, args.app_id)
+    app = find_app(catalog, state, args.app_id, gamelib.Library(CACHE_DIR, demo=DEMO).scan())
     if not app:
         print(f"Unbekannte App: {args.app_id}", file=sys.stderr)
         return 2

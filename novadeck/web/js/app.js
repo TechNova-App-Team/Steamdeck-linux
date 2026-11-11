@@ -36,6 +36,50 @@
     selfUpdating: false,
   };
 
+  // ---------------------------------------------------------------- sounds
+  // Tiny synthesized UI sounds (no audio files): a soft tick when moving, a short
+  // chord when starting something. Quiet on purpose; can be switched off.
+  const Sound = (() => {
+    let ctx = null;
+    let lastMove = 0;
+    function audio() {
+      if (!ctx) {
+        try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; }
+      }
+      if (ctx.state === 'suspended') ctx.resume();
+      return ctx;
+    }
+    function tone(freq, dur, { type = 'sine', gain = 0.04, glide = 0, delay = 0 } = {}) {
+      const a = audio();
+      if (!a) return;
+      const t = a.currentTime + delay;
+      const osc = a.createOscillator();
+      const amp = a.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t);
+      if (glide) osc.frequency.exponentialRampToValueAtTime(freq * glide, t + dur);
+      amp.gain.setValueAtTime(0.0001, t);
+      amp.gain.exponentialRampToValueAtTime(gain, t + 0.006);
+      amp.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(amp).connect(a.destination);
+      osc.start(t);
+      osc.stop(t + dur + 0.03);
+    }
+    const on = () => !S || S.settings.sounds !== false;
+    return {
+      move() {
+        const now = performance.now();
+        if (!on() || now - lastMove < 45) return;
+        lastMove = now;
+        tone(1700, 0.03, { gain: 0.022, glide: 0.82 });
+      },
+      launch() { if (on()) [523.25, 783.99, 1046.5].forEach((f, i) => tone(f, 0.24, { gain: 0.032, delay: i * 0.055 })); },
+      open() { if (on()) tone(380, 0.14, { gain: 0.03, glide: 1.7, type: 'triangle' }); },
+      back() { if (on()) tone(900, 0.07, { gain: 0.022, glide: 0.65 }); },
+      toggle() { if (on()) tone(1200, 0.05, { gain: 0.025 }); },
+    };
+  })();
+
   // ---------------------------------------------------------------- utils
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const smooth = () => (S && S.settings.reducedEffects ? 'auto' : 'smooth');
@@ -99,13 +143,51 @@
   const jobFor = (app) => (S.jobs || {})[app.installId || app.flatpak] || null;
   const isFav = (id) => S.favorites.includes(id);
 
+  const TAB_NAMES = { social: 'Musik' };
+
   function rowsModel() {
     const hidden = new Set(S.hidden);
     const visible = S.apps.filter((a) => !hidden.has(a.id));
     const byId = new Map(visible.map((a) => [a.id, a]));
-    const rows = [{ id: 'fav', name: 'Favoriten', apps: S.favorites.map((id) => byId.get(id)).filter(Boolean), add: true }];
-    S.categories.forEach((c) => rows.push({ id: c.id, name: c.name, apps: visible.filter((a) => a.category === c.id) }));
-    return rows.filter((r) => r.apps.length || r.add);
+    const games = visible.filter((a) => a.library);
+    const recent = games.filter((a) => a.lastPlayed).sort((a, b) => b.lastPlayed - a.lastPlayed).slice(0, 10);
+    const rows = [];
+    if (recent.length) rows.push({ id: 'recent', name: 'Weiterspielen', apps: recent, covers: true, tab: 'Start' });
+    rows.push({ id: 'fav', name: 'Favoriten', apps: S.favorites.map((id) => byId.get(id)).filter(Boolean), add: true, tab: recent.length ? '' : 'Start' });
+    if (games.length) {
+      const sorted = games.slice().sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0) || a.name.localeCompare(b.name, 'de'));
+      rows.push({ id: 'library', name: 'Bibliothek', apps: sorted, covers: true, tab: 'Bibliothek' });
+    }
+    S.categories.forEach((c) => rows.push({ id: c.id, name: c.name, apps: visible.filter((a) => a.category === c.id && !a.library), tab: TAB_NAMES[c.id] || c.name }));
+    const result = rows.filter((r) => r.apps.length || r.add);
+    let tabOwner = result[0] ? result[0].id : '';
+    result.forEach((r) => { if (r.tab) tabOwner = r.id; r.tabFor = tabOwner; });
+    return result;
+  }
+
+  function playedAgo(ts) {
+    if (!ts) return '';
+    const sec = Date.now() / 1000 - ts;
+    if (sec < 3600) return `vor ${Math.max(1, Math.round(sec / 60))} Min.`;
+    if (sec < 86400) return `vor ${Math.round(sec / 3600)} Std.`;
+    const days = Math.round(sec / 86400);
+    if (days === 1) return 'gestern';
+    if (days < 14) return `vor ${days} Tagen`;
+    if (days < 60) return `vor ${Math.round(days / 7)} Wochen`;
+    return new Date(ts * 1000).toLocaleDateString('de-DE', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function coverTileHTML(app, rowId) {
+    const ago = playedAgo(app.lastPlayed);
+    const sub = rowId === 'recent' && ago ? `Gespielt ${ago}` : app.subtitle;
+    const fav = rowId !== 'recent' && isFav(app.id) ? `<span class="badge fav" title="Favorit">${icon('star')}</span>` : '';
+    const classes = `tile cover${app.cover ? '' : ' no-art'}${app.kind === 'minecraft' ? ' pixel' : ''}`;
+    return `<button class="${classes}" data-nav data-tile data-id="${esc(app.id)}" data-row="${rowId}" aria-label="${esc(app.name)}">
+      ${app.cover ? `<img class="cover-img" src="${esc(app.cover)}" alt="" loading="lazy" decoding="async">` : ''}
+      <span class="cover-glyph">${icon(app.icon)}</span>
+      <span class="badges">${fav}</span>
+      <span class="cover-label"><span class="name">${esc(app.name)}</span><span class="sub">${esc(sub)}</span></span>
+    </button>`;
   }
 
   function kindLabel(app) {
@@ -166,14 +248,15 @@
     const keep = ui.focus && ui.focus.matches('[data-tile]') ? { id: ui.focus.dataset.id || ui.focus.dataset.action, row: ui.focus.dataset.row } : null;
     const rows = rowsModel();
     $('#rows').innerHTML = rows.map((r) => `
-      <section class="row" data-row-id="${r.id}">
+      <section class="row" data-row-id="${r.id}" data-tab-for="${r.tabFor}">
         <div class="row-head">${esc(r.name)}<span class="count">${r.apps.length}</span></div>
-        <div class="track">${r.apps.map((a) => tileHTML(a, r.id)).join('')}${r.add ? `
+        <div class="track${r.covers ? ' covers' : ''}">${r.apps.map((a) => (r.covers ? coverTileHTML(a, r.id) : tileHTML(a, r.id))).join('')}${r.add ? `
           <button class="tile add" data-nav data-tile data-action="add" data-row="${r.id}" aria-label="Kachel hinzufügen">
             <span class="ico">${icon('plus')}</span><span class="name">Kachel hinzufügen</span>
           </button>` : ''}</div>
       </section>`).join('');
-    $('#tabs').innerHTML = rows.map((r) => `<button class="tab" data-nav data-tab="${r.id}">${esc(r.name)}</button>`).join('');
+    $('#tabs').innerHTML = rows.filter((r) => r.tab).map((r) => `<button class="tab" data-nav data-tab="${r.id}">${esc(r.tab)}</button>`).join('');
+    $$('.cover-img').forEach((img) => img.addEventListener('error', () => img.closest('.tile').classList.add('no-art'), { once: true }));
     if (keep && !ui.layers.length) {
       const again = findTile(keep.id, keep.row) || findTile(keep.id);
       setFocus(again || rowDefault($('.row')), { noScroll: !!again });
@@ -192,7 +275,7 @@
     if (!row) return;
     $$('.row.is-active').forEach((r) => r !== row && r.classList.remove('is-active'));
     row.classList.add('is-active');
-    $$('.tab').forEach((t) => t.classList.toggle('is-current', t.dataset.tab === row.dataset.rowId));
+    $$('.tab').forEach((t) => t.classList.toggle('is-current', t.dataset.tab === (row.dataset.tabFor || row.dataset.rowId)));
   }
 
   // ---------------------------------------------------------------- hero
@@ -221,6 +304,19 @@
         chips: `<button class="chip solid" data-hero-start><kbd>A</kbd>${u && u.count ? 'Ansehen & aktualisieren' : 'Öffnen'}</button>`,
       };
     }
+    if (app.library) {
+      const ago = playedAgo(app.lastPlayed);
+      const source = app.kind === 'steam' ? 'Steam' : 'Minecraft';
+      const play = String(app.subtitle || '').split(' · ').slice(1).join(' · ');
+      let chips = app.available ? `<button class="chip solid" data-hero-start><kbd>A</kbd>Spielen</button>` : '';
+      chips += `<span class="chip"><kbd class="pad-trigger">L2</kbd>Optionen</span>`;
+      if (isFav(app.id)) chips += `<span class="chip plain">${icon('star')}Favorit</span>`;
+      return {
+        key: `${app.id}|${isFav(app.id)}`, icon: app.icon, cover: app.cover, stage: app.hero, pixel: app.kind === 'minecraft',
+        name: app.name, eyebrow: `${ago ? `Gespielt ${ago}` : 'Bibliothek'} · ${source}`,
+        info: `${play ? `${play}. ` : ''}${app.available ? app.info : app.reason}`, chips,
+      };
+    }
     const job = jobFor(app);
     const eyebrow = app.id === S.last && app.available ? `Zuletzt gestartet · ${kindLabel(app)}` : `${catName(app.category)} · ${kindLabel(app)}`;
     let chips = '';
@@ -237,11 +333,36 @@
     if (!m || (!force && m.key === ui.heroKey)) return;
     ui.heroKey = m.key;
     // Update right away: any delay here feels like input lag on the Deck.
-    $('#hero-icon').innerHTML = icon(m.icon);
+    const art = $('#hero-art');
+    art.classList.toggle('has-cover', !!m.cover);
+    art.classList.toggle('pixel', !!m.pixel);
+    $('#hero-icon').innerHTML = m.cover ? `<img src="${esc(m.cover)}" alt="">` : icon(m.icon);
+    updateStage(m.stage || null);
     $('#hero-eyebrow').textContent = m.eyebrow;
     $('#hero-title').textContent = m.name;
     $('#hero-info').textContent = m.info;
     $('#hero-chips').innerHTML = m.chips;
+  }
+
+  // Big blurred-in artwork behind the hero for games. Two layers cross-fade, and a
+  // new image only shows once it is loaded, so nothing ever flashes empty.
+  function updateStage(url) {
+    if (url === ui.stageUrl) return;
+    ui.stageUrl = url;
+    const layers = $$('.stage-img');
+    if (!url) {
+      layers.forEach((l) => l.classList.remove('is-on'));
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      if (ui.stageUrl !== url) return;
+      const next = layers.find((l) => !l.classList.contains('is-on')) || layers[0];
+      next.style.backgroundImage = `url("${url}")`;
+      next.classList.add('is-on');
+      layers.forEach((l) => { if (l !== next) l.classList.remove('is-on'); });
+    };
+    img.src = url;
   }
 
   // ---------------------------------------------------------------- focus
@@ -406,6 +527,7 @@
   // ---------------------------------------------------------------- layers
   function openLayer(el, opts = {}) {
     if (ui.layers.some((l) => l.el === el)) return;
+    Sound.open();
     el.hidden = false;
     hydrateIcons(el);
     ui.layers.push({ el, returnTo: ui.focus, onClose: opts.onClose });
@@ -465,9 +587,10 @@
     setTimeout(() => tile.classList.remove('is-pressed'), 140);
   }
 
-  async function launchApp(id, tile) {
+  async function launchApp(id, tile, direct = false) {
     const app = APPS.get(id);
     if (!app) return;
+    if (id === 'keyboard' && !direct) return openKeys();
     if (app.kind === 'updates') { press(tile); return openUpdates(); }
     const job = jobFor(app);
     if (job && job.status === 'running') return toast('download', `${job.label} wird noch installiert …`);
@@ -483,6 +606,7 @@
       } catch (e) { toast('info', e.message); }
       return;
     }
+    Sound.launch();
     showLaunch(app.icon, app.name, app.kind === 'web' ? 'Öffnet als App-Fenster …' : 'Wird gestartet …');
     markLaunching();
     try {
@@ -629,7 +753,8 @@
     renderDrawer();
     openLayer($('#drawer'));
     const vol = $('#range-volume');
-    setFocus(visible(vol) ? vol : $('#drawer .toggle'), { noScroll: true });
+    const play = $('#dm-toggle');
+    setFocus(visible(play) ? play : visible(vol) ? vol : $('#drawer .toggle'), { noScroll: true });
   }
 
   function openPower() {
@@ -889,6 +1014,7 @@
       ui.statusFails = 0;
       $('#offline').hidden = true;
       renderStatus();
+      renderPhone(STATUS.phone);
       handleUpdates(STATUS.updates);
       const { changed, running } = handleJobs(STATUS.jobs);
       if (changed) await reloadState();
@@ -908,12 +1034,144 @@
     ui.pollTimer = setTimeout(pollStatus, ms);
   }
 
+  // ---------------------------------------------------------------- phone keyboard
+  let phoneSeenEvent = 0;
+
+  function qrSVG(text) {
+    if (typeof qrcode !== 'function') return '';
+    const qr = qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    const n = qr.getModuleCount();
+    let path = '';
+    for (let r = 0; r < n; r += 1) {
+      for (let c = 0; c < n; c += 1) if (qr.isDark(r, c)) path += `M${c} ${r}h1v1h-1z`;
+    }
+    return `<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" aria-label="QR-Code"><path d="${path}" fill="#08080a"/></svg>`;
+  }
+
+  function renderPhone(ph) {
+    const pill = $('#stat-phone');
+    pill.hidden = !(ph && ph.connected);
+    if (!pill.hidden && !pill.firstElementChild) pill.innerHTML = `${icon('phone')}<span class="label">Handy</span>`;
+    if (ph && ph.event && ph.event.at > phoneSeenEvent) {
+      if (phoneSeenEvent && document.visibilityState === 'visible') {
+        toast('phone', ph.event.kind === 'text' ? `Vom Handy eingefügt (${ph.event.preview})` : 'Taste vom Handy gedrückt', 2200);
+      }
+      phoneSeenEvent = ph.event.at;
+    }
+    if (!(scope() && scope().id === 'keys')) return;
+    const state = $('#kb-state');
+    if (!ph || !ph.active) {
+      $('#kb-qr').innerHTML = '';
+      state.textContent = (ph && ph.error) || 'Ausgeschaltet.';
+      state.classList.remove('ok');
+      $('#kb-url').textContent = '';
+      return;
+    }
+    if ($('#kb-qr').dataset.url !== ph.url) {
+      $('#kb-qr').dataset.url = ph.url;
+      $('#kb-qr').innerHTML = qrSVG(ph.url);
+      $('#kb-url').textContent = ph.url;
+    }
+    state.classList.toggle('ok', !!ph.connected);
+    state.textContent = ph.connected
+      ? 'Verbunden ✓ Tipp auf dem Handy, der Text landet dort, wo der Cursor ist.'
+      : 'Scanne den Code mit der Kamera deines Handys.';
+    if (!ph.typing) state.textContent += ' (Ohne virtuelle Tastatur: Text kommt in die Zwischenablage.)';
+  }
+
+  async function openKeys() {
+    closeAllLayers();
+    $('#kb-qr').dataset.url = '';
+    openLayer($('#keys'), { focus: $('#kb-steam'), onClose: () => clearInterval(ui.keysTimer) });
+    try {
+      const res = await api.post('/api/phone', { action: 'start' });
+      renderPhone(res.phone);
+    } catch (e) { toast('info', e.message); }
+    clearInterval(ui.keysTimer);
+    ui.keysTimer = setInterval(async () => {
+      try { renderPhone((await api.get('/api/phone')).phone); } catch { /* ignore */ }
+    }, 2000);
+  }
+
+  async function phoneOff() {
+    try {
+      const res = await api.post('/api/phone', { action: 'stop' });
+      renderPhone(res.phone);
+      toast('phone', 'Handy getrennt');
+    } catch (e) { toast('info', e.message); }
+  }
+
+  // ---------------------------------------------------------------- now playing
+  let PLAYER = null;
+  let playerAt = 0;
+
+  function playerPosition() {
+    if (!PLAYER) return 0;
+    const extra = PLAYER.status === 'Playing' ? (Date.now() - playerAt) / 1000 : 0;
+    return Math.min(PLAYER.length || 0, PLAYER.position + extra);
+  }
+
+  function renderPlayer() {
+    const p = PLAYER;
+    $('#np').hidden = !p;
+    $('#group-music').hidden = !p;
+    if (!p) return;
+    const art = p.art ? `url("${p.art}")` : '';
+    const playing = p.status === 'Playing';
+    [$('#np-art'), $('#dm-art')].forEach((el) => {
+      if (el.dataset.art !== (p.art || '')) {
+        el.dataset.art = p.art || '';
+        el.style.backgroundImage = art;
+        el.innerHTML = p.art ? '' : icon('note');
+      }
+    });
+    $('#np-title').textContent = p.title;
+    $('#np-artist').textContent = p.artist || p.app;
+    $('#dm-title').textContent = p.title;
+    $('#dm-artist').textContent = p.artist || '';
+    $('#dm-app').textContent = `${playing ? 'Läuft gerade' : 'Pausiert'} · ${p.app}`;
+    const toggleIcon = icon(playing ? 'media-pause' : 'media-play');
+    if ($('#np-toggle').dataset.state !== String(playing)) {
+      $('#np-toggle').dataset.state = String(playing);
+      $('#np-toggle').innerHTML = toggleIcon;
+      $('#dm-toggle').innerHTML = toggleIcon;
+    }
+    tickPlayer();
+  }
+
+  function tickPlayer() {
+    if (!PLAYER || !PLAYER.length) { $('#np-bar').style.width = '0'; return; }
+    $('#np-bar').style.width = `${(playerPosition() / PLAYER.length) * 100}%`;
+  }
+
+  async function pollPlayer() {
+    try {
+      const res = await api.get('/api/media');
+      PLAYER = res.player;
+      playerAt = Date.now();
+      renderPlayer();
+    } catch { /* the status poll reports connection problems */ }
+    setTimeout(pollPlayer, document.visibilityState === 'visible' ? 2500 : 10000);
+  }
+
+  async function mediaAction(action) {
+    try {
+      const res = await api.post('/api/media', { action });
+      PLAYER = res.player;
+      playerAt = Date.now();
+      renderPlayer();
+    } catch (e) { toast('note', e.message); }
+  }
+
   // ---------------------------------------------------------------- clock
   function tickClock() {
     const now = new Date();
     $('#clock').textContent = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     $('#date').textContent = now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
     const h = now.getHours();
+    tickPlayer();
     $('#greet').textContent = h < 5 ? 'Gute Nacht.' : h < 11 ? 'Guten Morgen.' : h < 18 ? 'Guten Tag.' : h < 23 ? 'Guten Abend.' : 'Gute Nacht.';
   }
 
@@ -936,10 +1194,19 @@
 
   function runAction(action) {
     if (ui.launching) return;
+    const before = ui.focus;
     switch (action) {
-      case 'up': case 'down': case 'left': case 'right': move(action); break;
+      case 'up': case 'down': case 'left': case 'right':
+        move(action);
+        if (ui.focus !== before) Sound.move();
+        break;
       case 'a': activate(ui.focus); break;
-      case 'b': back(); break;
+      case 'b': {
+        const layers = ui.layers.length;
+        back();
+        if (ui.layers.length !== layers || ui.focus !== before) Sound.back();
+        break;
+      }
       case 'x': contextForFocus(); break;
       case 'y': toggleFavFocus(); break;
       case 'lb': jumpRow(-1); break;
@@ -1129,6 +1396,8 @@
     if (el.matches('[data-setting]')) return toggleSetting(el);
     if (el.matches('[data-browser]')) return chooseBrowser(el.dataset.browser);
     if (el.matches('[data-launch]')) { closeAllLayers(); return launchApp(el.dataset.launch); }
+    if (el.matches('[data-media]')) return mediaAction(el.dataset.media);
+    if (el.id === 'np-toggle') return mediaAction('playpause');
     if (el.matches('[data-cat]')) {
       addCategory = el.dataset.cat;
       $$('#add-cat button').forEach((b) => b.setAttribute('aria-pressed', String(b === el)));
@@ -1137,11 +1406,13 @@
     switch (el.id) {
       case 'btn-menu': return openDrawer();
       case 'btn-power': return openPower();
-      case 'btn-keyboard': return launchApp('keyboard');
+      case 'btn-keyboard': return openKeys();
+      case 'kb-steam': return launchApp('keyboard', null, true);
+      case 'kb-off': return phoneOff();
       case 'btn-add': return openAdd();
       case 'btn-unhide': return unhideAll();
       case 'btn-mute': return setVolume({ mute: 'toggle' });
-      case 'add-keyboard': return launchApp('keyboard');
+      case 'add-keyboard': return launchApp('keyboard', null, true);
       case 'btn-retry': return location.reload();
       case 'btn-updates': return openUpdates();
       case 'upd-run': return runUpdates();
@@ -1163,6 +1434,7 @@
   async function toggleSetting(el) {
     const key = el.dataset.setting;
     const value = el.getAttribute('aria-checked') !== 'true';
+    Sound.toggle();
     el.setAttribute('aria-checked', String(value));
     try {
       const res = await api.post('/api/settings', { [key]: value });
@@ -1247,6 +1519,7 @@
     tickClock();
     setInterval(tickClock, 1000);
     pollStatus();
+    pollPlayer();
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') return;
       document.title = 'NovaDeck';

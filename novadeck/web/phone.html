@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050506">
+  <meta name="color-scheme" content="dark">
+  <title>NovaDeck · Tastatur</title>
+  <style>
+    :root {
+      --bg: #050506; --ink: #f5f7fa; --ink-2: rgba(245, 247, 250, .72); --ink-3: rgba(245, 247, 250, .48);
+      --line: rgba(255, 255, 255, .1); --glass: rgba(255, 255, 255, .06);
+      --neon: 0 0 0 1.5px rgba(255, 255, 255, .95), 0 0 18px rgba(255, 255, 255, .35);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      background: radial-gradient(120% 70% at 80% -10%, rgba(255, 255, 255, .14), transparent 60%),
+                  radial-gradient(90% 60% at -10% 110%, rgba(255, 255, 255, .08), transparent 60%), var(--bg);
+      color: var(--ink); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Inter", sans-serif;
+      padding: max(18px, env(safe-area-inset-top)) 18px max(24px, env(safe-area-inset-bottom));
+    }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .brand { font-weight: 800; letter-spacing: .3em; font-size: 14px; display: flex; align-items: center; gap: 10px; }
+    .brand b { font-weight: 300; color: var(--ink-3); }
+    .brand svg { width: 24px; height: 24px; filter: drop-shadow(0 0 6px rgba(255, 255, 255, .7)); }
+    .pill { font-size: 12.5px; font-weight: 650; padding: 6px 12px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line); color: var(--ink-2); display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+    .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #e8b860; }
+    .pill.ok::before { background: #8ee0b0; box-shadow: 0 0 8px #8ee0b0; }
+    .pill.bad::before { background: #f08a8a; }
+    h1 { font-size: 26px; letter-spacing: -.02em; margin: 6px 0 4px; }
+    .sub { color: var(--ink-3); font-size: 14px; margin: 0 0 16px; }
+    textarea {
+      width: 100%; min-height: 128px; resize: vertical; padding: 16px; border-radius: 20px; font: inherit; font-size: 17px; color: var(--ink);
+      background: linear-gradient(150deg, rgba(255, 255, 255, .09), rgba(255, 255, 255, .03)); border: 1px solid var(--line); outline: none;
+    }
+    textarea:focus { box-shadow: var(--neon); border-color: transparent; }
+    .row { display: grid; grid-template-columns: 1.3fr 1fr; gap: 10px; margin: 12px 0 18px; }
+    button {
+      font: inherit; color: var(--ink); border: 1px solid var(--line); background: var(--glass); border-radius: 16px;
+      min-height: 52px; font-weight: 650; font-size: 15.5px; touch-action: manipulation; transition: transform .08s;
+    }
+    button:active { transform: scale(.96); background: rgba(255, 255, 255, .14); }
+    .solid { background: var(--ink); color: #060607; border-color: transparent; box-shadow: 0 0 22px rgba(255, 255, 255, .3); }
+    .keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .keys button { font-size: 19px; }
+    .keys .wide { grid-column: span 2; font-size: 14.5px; }
+    .label { font-size: 11.5px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-3); margin: 0 2px 10px; }
+    .toggle { display: flex; align-items: center; gap: 12px; margin: 18px 2px 0; color: var(--ink-2); font-size: 14px; }
+    .toggle input { width: 22px; height: 22px; accent-color: #f5f7fa; }
+    .toast {
+      position: fixed; left: 50%; bottom: max(22px, env(safe-area-inset-bottom)); transform: translate(-50%, 20px); opacity: 0;
+      padding: 12px 18px; border-radius: 999px; background: rgba(30, 31, 36, .95); border: 1px solid rgba(255, 255, 255, .16);
+      font-size: 14px; font-weight: 600; transition: opacity .2s, transform .2s; pointer-events: none; max-width: 90vw; text-align: center;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .foot { color: var(--ink-3); font-size: 12.5px; text-align: center; margin-top: 26px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#f5f7fa" stroke-width="1.5" stroke-linejoin="round"><path d="M12 2.5c.55 5.3 4.2 8.95 9.5 9.5-5.3.55-8.95 4.2-9.5 9.5-.55-5.3-4.2-8.95-9.5-9.5 5.3-.55 8.95-4.2 9.5-9.5z"/></svg>
+      <span>NOVA<b>DECK</b></span>
+    </div>
+    <span class="pill" id="state">Verbinde …</span>
+  </header>
+
+  <h1>Tastatur</h1>
+  <p class="sub">Was du hier tippst, landet dort, wo auf dem Deck gerade der Cursor ist.</p>
+
+  <textarea id="text" placeholder="Hier tippen …" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+  <div class="row">
+    <button class="solid" id="send">Senden</button>
+    <button id="send-enter">Senden + ⏎</button>
+  </div>
+
+  <div class="label">Tasten</div>
+  <div class="keys">
+    <button data-key="backspace" aria-label="Löschen">⌫</button>
+    <button data-key="enter" aria-label="Enter">⏎</button>
+    <button data-key="tab" aria-label="Tab">⇥</button>
+    <button data-key="esc" aria-label="Escape">Esc</button>
+    <button data-key="left" aria-label="Links">←</button>
+    <button data-key="up" aria-label="Hoch">↑</button>
+    <button data-key="down" aria-label="Runter">↓</button>
+    <button data-key="right" aria-label="Rechts">→</button>
+    <button data-key="selectall" class="wide">Alles markieren</button>
+    <button data-key="space" class="wide">Leertaste</button>
+  </div>
+
+  <label class="toggle"><input type="checkbox" id="terminal"> Ich tippe in die Konsole (Strg + Umschalt + V)</label>
+  <p class="foot">Funktioniert nur in deinem WLAN und schaltet sich nach 45 Minuten ohne Nutzung aus.</p>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    (() => {
+      const base = location.pathname.replace(/\/$/, '');
+      const $ = (id) => document.getElementById(id);
+      let toastTimer = 0;
+      function toast(text) {
+        $('toast').textContent = text;
+        $('toast').classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2200);
+      }
+      function setState(ok, text) {
+        $('state').textContent = text;
+        $('state').className = 'pill ' + (ok ? 'ok' : 'bad');
+      }
+      async function post(path, body) {
+        const res = await fetch(base + '/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}), cache: 'no-store' });
+        if (!res.ok) throw new Error('offline');
+        return res.json();
+      }
+      async function ping() {
+        try { await post('ping'); setState(true, 'Mit dem Deck verbunden'); }
+        catch { setState(false, 'Keine Verbindung'); }
+      }
+      async function send(enter) {
+        const text = $('text').value;
+        if (!text) { $('text').focus(); return; }
+        try {
+          const res = await post('type', { text, enter, terminal: $('terminal').checked });
+          if (!res.ok) return toast(res.error || 'Hat nicht geklappt');
+          if (navigator.vibrate) navigator.vibrate(12);
+          $('text').value = '';
+          toast(res.pasted ? 'Eingefügt ✓' : (res.message || 'In der Zwischenablage'));
+        } catch { toast('Keine Verbindung zum Deck'); }
+        $('text').focus();
+      }
+      $('send').addEventListener('click', () => send(false));
+      $('send-enter').addEventListener('click', () => send(true));
+      document.querySelectorAll('[data-key]').forEach((btn) => btn.addEventListener('click', async () => {
+        try {
+          const res = await post('key', { key: btn.dataset.key });
+          if (!res.ok) toast(res.error || 'Hat nicht geklappt');
+          else if (navigator.vibrate) navigator.vibrate(8);
+        } catch { toast('Keine Verbindung zum Deck'); }
+      }));
+      $('text').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(false); }
+      });
+      ping();
+      setInterval(ping, 10000);
+    })();
+  </script>
+</body>
+</html>

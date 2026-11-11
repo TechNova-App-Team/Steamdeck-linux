@@ -397,6 +397,35 @@ class ApiTest(unittest.TestCase):
         self.req("/api/whatsnew/seen", {})
         self.assertIsNone(self.req("/api/state")[1]["whatsNew"])
 
+    def test_library_tiles_and_artwork(self):
+        state = self.req("/api/state")[1]
+        games = [a for a in state["apps"] if a.get("library")]
+        self.assertTrue(games, "demo library is part of the state")
+        game = next(g for g in games if g["kind"] == "steam")
+        self.assertTrue(game["available"])
+        request = urllib.request.Request(f"http://127.0.0.1:{self.port}{game['cover']}")
+        with OPENER.open(request, timeout=5) as res:
+            self.assertEqual(res.headers["Content-Type"], "image/svg+xml")
+        self.assertEqual(self.req("/art/steam-1/../../catalog.json")[0], 404)
+        status, body = self.req("/api/launch", {"id": game["id"]})
+        self.assertEqual(status, 200, body)
+
+    def test_now_playing_and_controls(self):
+        player = self.req("/api/media")[1]["player"]
+        self.assertEqual(player["title"], "Midnight Drive")
+        status, body = self.req("/api/media", {"action": "playpause"})
+        self.assertEqual(body["player"]["status"], "Paused")
+        self.req("/api/media", {"action": "playpause"})
+        self.assertEqual(self.req("/api/media", {"action": "shutdown"})[0], 409)
+
+    def test_phone_keyboard_on_off(self):
+        status, body = self.req("/api/phone", {"action": "start"})
+        self.assertTrue(body["phone"]["active"])
+        self.assertIn("/k/", body["phone"]["url"])
+        self.assertIn("phone", self.req("/api/status")[1])
+        status, body = self.req("/api/phone", {"action": "stop"})
+        self.assertFalse(body["phone"]["active"])
+
     def test_rejects_non_json(self):
         request = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/launch", data=b"id=netflix",
                                          headers={"X-Nova-Token": "test-token",

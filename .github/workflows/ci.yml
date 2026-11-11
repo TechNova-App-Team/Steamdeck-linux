@@ -19,6 +19,7 @@ jobs:
           node --check novadeck/web/js/app.js
           node --check novadeck/kwin/novadeck-helper.js
           node --check novadeck/kwin/novadeck-focus.js
+          python -m py_compile novadeck/*.py
       - name: KWin window helper (simulated KWin)
         run: node tests/kwin_helper_test.js
       - name: Python unit & API tests

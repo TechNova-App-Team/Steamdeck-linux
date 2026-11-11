@@ -14,6 +14,10 @@ Der **Gaming-Modus (Big Picture) bleibt genau so, wie er ist.**
 | | |
 |---|---|
 | **NovaDeck Hub** | Ein Vollbild-Startbildschirm wie bei einer Konsole. Bedienung mit Steuerkreuz, A und B, per Touchscreen oder Trackpad. Zeigt Uhrzeit, Akku, WLAN, Lautstärke und freien Speicher. |
+| **Deine Spiele mit echten Covern** | Reihen *Weiterspielen* und *Bibliothek* mit deinen Steam-Spielen im echten Cover-Artwork, dazu deine Minecraft-Instanzen zum Direktstart. Beim Auswählen erscheint groß das Artwork des Spiels. |
+| **Handy als Tastatur** | QR-Code scannen, auf dem Handy tippen: Der Text landet auf dem Deck, auch Passwörter, Umlaute und Emojis. |
+| **Musik-Karte** | Was auf Spotify, YouTube Music & Co. läuft, mit Cover unter der Uhr. Pause/Weiter im Schnellmenü. |
+| **Hub kommt zurück** | Startest du etwas, tritt der Hub zur Seite. Schließt du die App, ist er automatisch wieder da. |
 | **Apps als echte Apps** | Netflix, YouTube, Prime Video, Disney+, Twitch, Crunchyroll, YouTube Music, Fortnite (Cloud), Xbox Cloud und GeForce NOW öffnen sich als eigene App-Fenster ohne Browser-Leisten. |
 | **Ein-Klick-Installation** | Fehlt eine App (z. B. Spotify oder Discord), drückst du A auf der Kachel und NovaDeck installiert sie aus Flathub, ohne Passwort. |
 | **Updates ohne Nachdenken** | Die Kachel *Updates* aktualisiert Chrome, Minecraft-Launcher, Spotify & Co. mit einem Druck auf A. Automatisch läuft das auch leise im Hintergrund, aber nie während Cloud-Gaming und nicht bei schwachem Akku. |
@@ -82,8 +86,8 @@ Steam leitet im Desktop-Modus die Tasten des Decks als Tastatur und Maus weiter.
 | **A** | Enter | Starten / Bestätigen |
 | **B** | Esc | Zurück / Schließen |
 | **L2** (Rechtsklick) | `X` / Kontextmenü-Taste | Optionen: Favorit, Ausblenden, Zu Steam hinzufügen |
-| Touchscreen, rechtes Trackpad | Maus | Antippen = Starten |
-| **Steam + X** | | Bildschirmtastatur |
+| Touchscreen, rechtes Trackpad | Maus | Antippen = auswählen, nochmal antippen = starten |
+| **Steam + X** | | Bildschirmtastatur (oder Tastatur-Knopf oben → Handy als Tastatur) |
 | | `Tab` / `Q` `E` | Nächste / vorherige Reihe |
 | | `O` | Schnellmenü |
 | | `P` | Ein/Aus-Menü |
@@ -111,6 +115,28 @@ Fortnite läuft unter Linux nicht direkt, weil Epic den Anti-Cheat für Linux ni
 3. Im Gaming-Modus findest du Fortnite jetzt unter *Nicht-Steam*. NovaDeck erkennt den Gaming-Modus und startet es dort im Vollbild.
 
 Das funktioniert genauso mit Netflix, YouTube und allen anderen Kacheln.
+
+### Deine Spiele
+NovaDeck liest deine Steam-Bibliothek direkt vom Deck (interner Speicher und SD-Karte), ganz ohne Login oder Steam-API:
+
+- **Weiterspielen** zeigt, was du zuletzt gespielt hast, **Bibliothek** alle installierten Spiele, jeweils mit dem echten Cover. Eigene Cover aus Steam (z. B. über SteamGridDB gesetzt) werden übernommen.
+- Fehlt einem Spiel das Cover im Steam-Zwischenspeicher, holt NovaDeck es einmal von Steams öffentlichem Bild-Server.
+- Proton, Laufzeitumgebungen und Ähnliches werden ausgeblendet.
+- **Minecraft:** Jede Instanz aus dem Prism Launcher steht als eigene Kachel da (mit dem Bild deiner letzten Welt) und startet direkt ins Spiel.
+
+### Handy als Tastatur
+![Tastatur](docs/screenshots/keyboard.jpg)
+
+1. Oben im Hub auf das **Tastatur-Symbol** (oder die Kachel *Tastatur*).
+2. Den **QR-Code** mit der Handy-Kamera scannen. Handy und Deck müssen im selben WLAN sein.
+3. Auf dem Handy tippen, **Senden** drücken. Der Text landet dort, wo auf dem Deck gerade der Cursor ist, z. B. im Netflix-Login.
+
+Darunter gibt es Tasten für ⌫, ⏎, Tab, Esc, die Pfeile und „Alles markieren“. Die Seite läuft direkt auf dem Deck (nichts geht ins Internet), ist mit einem geheimen Schlüssel geschützt und schaltet sich nach 45 Minuten ohne Nutzung aus. Technisch: Der Text kommt in die Zwischenablage und wird per virtueller Tastatur eingefügt. Klappt das nicht, tippt NovaDeck ihn Zeichen für Zeichen.
+
+<img src="docs/screenshots/phone.jpg" width="280" alt="Handy-Tastatur">
+
+### Musik
+Läuft etwas in Spotify, YouTube Music, VLC oder einem Chrome-Tab, erscheint unter der Uhr eine kleine Karte mit Cover und Fortschritt. Zum Pausieren antippen oder im **Schnellmenü** (Zurück · Pause · Weiter) mit dem Steuerkreuz bedienen.
 
 ### Minecraft
 Die Kachel startet den **Prism Launcher**, den besten Minecraft-Launcher fürs Deck. Du meldest dich einmal mit deinem Microsoft-Konto an (Minecraft Java Edition muss gekauft sein) und wählst eine Version. Für Controller-Steuerung installierst du im Launcher die Mod **Controlify** oder fügst den Prism Launcher wie oben beschrieben zu Steam hinzu.
@@ -171,6 +197,9 @@ zeigt, was NovaDeck auf deinem Deck findet (Browser, Steam, Lautstärke, Helligk
 
 | Problem | Lösung |
 |---|---|
+| Handy findet das Deck nicht | Beide im selben WLAN? Gast-WLANs trennen Geräte oft voneinander. Notfalls die Adresse unter dem QR-Code im Handy-Browser eintippen. |
+| Text vom Handy kommt nicht an | Erst auf dem Deck in das Eingabefeld tippen (Cursor muss dort sein), dann auf dem Handy senden. In der Konsole den Schalter „Ich tippe in die Konsole“ nutzen. |
+| Keine Spiele in der Bibliothek | Steam einmal im Desktop-Modus öffnen, damit die Bibliothek und die Cover geladen sind. |
 | Hub reagiert träge | Ab Version 1.2 deutlich flüssiger. Noch leichter wird's im Schnellmenü mit „Effekte reduzieren“. |
 | Chrome meldet „Can't update Chrome / Reinstall Chrome“ | Nicht auf „Reinstall“ tippen (das lädt nur eine .deb, die auf dem Deck nicht geht). Ab 1.2 ist die Meldung aus; Chrome aktualisierst du über die Kachel *Updates*. |
 | Hub öffnet sich nicht | Prüfen, ob Google Chrome installiert ist (`doctor`). Ohne Chrome öffnet sich der Hub im Standard-Browser. |
@@ -184,7 +213,11 @@ zeigt, was NovaDeck auf deinem Deck findet (Browser, Steam, Lautstärke, Helligk
 
 ```
 novadeck/            Hub: Python-Dienst (nur Standardbibliothek) + Web-Oberfläche
-  novadeck.py        Server, Launcher, CLI (hub, launch, doctor, …)
+  novadeck.py        Server, Launcher, Updates, CLI (hub, launch, doctor, …)
+  library.py         Steam-Bibliothek, Cover, Minecraft-Instanzen
+  media.py           Musik-Karte (MPRIS über D-Bus)
+  phone.py           Handy als Tastatur (LAN-Seite, virtuelle Tastatur)
+  kwin/              KWin-Skripte: Hub tritt zur Seite und kommt zurück
   catalog.json       Alle Kacheln
   web/               index.html, css/, js/, icons.json, img/, fonts/
 theme/               Farbschema, Konsole, Startbildschirm (Plasma Look-and-Feel)
@@ -202,6 +235,7 @@ NOVADECK_DEMO=1 python3 novadeck/novadeck.py serve
 Tests:
 ```bash
 python3 -m unittest discover -s tests -v
+node tests/kwin_helper_test.js
 bash tests/test_install.sh
 shellcheck install.sh uninstall.sh
 ```
@@ -210,4 +244,4 @@ Neue Kachel: Eintrag in `novadeck/catalog.json` ergänzen (`kind`: `flatpak`, `w
 
 ---
 
-Schrift: [Inter](https://rsms.me/inter/) (SIL Open Font License). NovaDeck steht in keiner Verbindung zu Valve, Netflix, Epic Games, Microsoft oder anderen genannten Diensten; deren Namen dienen nur der Beschriftung der Kacheln.
+Schrift: [Inter](https://rsms.me/inter/) (SIL Open Font License). QR-Codes: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) von Kazuhiko Arase (MIT). NovaDeck steht in keiner Verbindung zu Valve, Netflix, Epic Games, Microsoft oder anderen genannten Diensten; deren Namen dienen nur der Beschriftung der Kacheln.
