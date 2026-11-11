@@ -61,6 +61,7 @@ check "chrome installed" grep -q com.google.Chrome "$STUB_FLATPAKS"
 check "prism installed" grep -q org.prismlauncher.PrismLauncher "$STUB_FLATPAKS"
 check "chrome udev override" grep -q 'override --user --filesystem=/run/udev:ro com.google.Chrome' "$STUB_LOG"
 check "chrome wallet flag" grep -q -- '--password-store=basic' "$HOME/.var/app/com.google.Chrome/config/chrome-flags.conf"
+check "chrome reinstall nag off" grep -q -- '--disable-features=OutdatedBuildDetector' "$HOME/.var/app/com.google.Chrome/config/chrome-flags.conf"
 check "wallpaper set" grep -q "writeConfig('Image', 'file://$P/app/web/img/wallpaper.jpg')" "$STUB_LOG"
 check "panel launchers set" grep -q "applications:novadeck-hub.desktop" "$STUB_LOG"
 check "original colour scheme recorded" grep -qP '^kdeglobals\tGeneral\tColorScheme\tVapor$' "$XDG_CONFIG_HOME/novadeck/restore.tsv"
@@ -79,6 +80,7 @@ bash "$ROOT/install.sh" --update > "$TMP/update.log" 2>&1 || { cat "$TMP/update.
 check "update: autostart kept" test -f "$XDG_CONFIG_HOME/autostart/novadeck-hub.desktop"
 check "update: deleted desktop shortcut stays deleted" test ! -e "$HOME/Desktop/NovaDeck.desktop"
 check "update: no app installs" bash -c "! grep -q 'flatpak install' '$STUB_LOG'"
+check "update: chrome flags not duplicated" test "$(grep -c OutdatedBuildDetector "$HOME/.var/app/com.google.Chrome/config/chrome-flags.conf")" = 1
 check "update: panel and wallpaper untouched" bash -c "! grep -q evaluateScript '$STUB_LOG'"
 check "update: version file written" test "$(cat "$P/VERSION")" = "$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$ROOT/novadeck/version.json")"
 

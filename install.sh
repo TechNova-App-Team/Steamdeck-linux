@@ -321,19 +321,29 @@ install_apps() {
     fi
   done
 
-  if flatpak info com.google.Chrome >/dev/null 2>&1 || (( DRY_RUN )); then
-    # Controllers for cloud gaming in the browser (Valve's own Chrome shortcut does the same).
-    run flatpak override --user --filesystem=/run/udev:ro com.google.Chrome
-    # Fresh Chrome profile: skip the KDE-Wallet password prompt on every start.
-    local cdir="$HOME/.var/app/com.google.Chrome/config"
-    if [[ ! -d "$cdir/google-chrome/Default" ]] && ! grep -qs -- '--password-store' "$cdir/chrome-flags.conf"; then
-      run mkdir -p "$cdir"
-      (( DRY_RUN )) || printf '%s\n' '--password-store=basic' >> "$cdir/chrome-flags.conf"
-      ok "Chrome fragt nicht mehr nach dem KDE-Wallet-Passwort"
-    fi
-    ok "Controller-Zugriff für Cloud-Gaming im Browser"
-  fi
+  chrome_tweaks
   return 0
+}
+
+chrome_tweaks() {
+  command -v flatpak >/dev/null 2>&1 || return 0
+  flatpak info com.google.Chrome >/dev/null 2>&1 || (( DRY_RUN )) || return 0
+  # Controllers for cloud gaming in the browser (Valve's own Chrome shortcut does the same).
+  run flatpak override --user --filesystem=/run/udev:ro com.google.Chrome
+  local cdir="$HOME/.var/app/com.google.Chrome/config"
+  run mkdir -p "$cdir"
+  # Fresh Chrome profile: skip the KDE-Wallet password prompt on every start.
+  if [[ ! -d "$cdir/google-chrome/Default" ]] && ! grep -qs -- '--password-store' "$cdir/chrome-flags.conf"; then
+    (( DRY_RUN )) || printf '%s\n' '--password-store=basic' >> "$cdir/chrome-flags.conf"
+    ok "Chrome fragt nicht mehr nach dem KDE-Wallet-Passwort"
+  fi
+  # Flatpak Chrome can't update itself, so its "Can't update Chrome / Reinstall" bubble only
+  # leads to a useless .deb download. NovaDeck keeps Chrome up to date instead.
+  if ! grep -qs -- 'OutdatedBuildDetector' "$cdir/chrome-flags.conf"; then
+    (( DRY_RUN )) || printf '%s\n' '--disable-features=OutdatedBuildDetector' >> "$cdir/chrome-flags.conf"
+    ok "Chrome zeigt keine sinnlose „Reinstall Chrome“-Meldung mehr"
+  fi
+  ok "Controller-Zugriff für Cloud-Gaming im Browser"
 }
 
 backup_configs() {
@@ -493,6 +503,7 @@ main() {
     preflight
     install_files
     refresh_theme_files
+    chrome_tweaks
     (( REOPEN )) && start_hub
     printf '\n  NovaDeck %s ist installiert.\n' "$NOVA_VERSION"
     return 0

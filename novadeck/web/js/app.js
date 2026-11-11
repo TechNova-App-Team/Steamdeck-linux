@@ -232,17 +232,12 @@
     const m = heroModel(tile);
     if (!m || (!force && m.key === ui.heroKey)) return;
     ui.heroKey = m.key;
-    const hero = $('#hero');
-    hero.classList.add('is-swapping');
-    clearTimeout(ui.heroTimer);
-    ui.heroTimer = setTimeout(() => {
-      $('#hero-icon').innerHTML = icon(m.icon);
-      $('#hero-eyebrow').textContent = m.eyebrow;
-      $('#hero-title').textContent = m.name;
-      $('#hero-info').textContent = m.info;
-      $('#hero-chips').innerHTML = m.chips;
-      hero.classList.remove('is-swapping');
-    }, 110);
+    // Update right away: any delay here feels like input lag on the Deck.
+    $('#hero-icon').innerHTML = icon(m.icon);
+    $('#hero-eyebrow').textContent = m.eyebrow;
+    $('#hero-title').textContent = m.name;
+    $('#hero-info').textContent = m.info;
+    $('#hero-chips').innerHTML = m.chips;
   }
 
   // ---------------------------------------------------------------- focus
@@ -270,7 +265,17 @@
     if (!el.matches('[data-power]')) $$('.power-btn.is-armed').forEach(disarm);
   }
 
+  // Smooth scrolling only for single steps; while a direction is held (or the
+  // moves come quickly) jump directly so the focus never lags behind the input.
+  function scrollMode() {
+    const now = performance.now();
+    const quick = now - (ui.lastMoveAt || 0) < 260;
+    ui.lastMoveAt = now;
+    return quick || (S && S.settings.reducedEffects) ? 'auto' : 'smooth';
+  }
+
   function scrollTileIntoView(tile) {
+    const behavior = scrollMode();
     const track = tile.parentElement;
     const pad = parseFloat(getComputedStyle(track).paddingLeft) || 40;
     const left = tile.offsetLeft;
@@ -278,10 +283,10 @@
     let target = track.scrollLeft;
     if (left - pad < track.scrollLeft) target = left - pad;
     else if (right + pad > track.scrollLeft + track.clientWidth) target = right + pad - track.clientWidth;
-    if (Math.abs(target - track.scrollLeft) > 1) track.scrollTo({ left: target, behavior: smooth() });
+    if (Math.abs(target - track.scrollLeft) > 1) track.scrollTo({ left: target, behavior });
     const rows = $('#rows');
     const top = tile.closest('.row').offsetTop - 4;
-    if (Math.abs(rows.scrollTop - top) > 2) rows.scrollTo({ top, behavior: smooth() });
+    if (Math.abs(rows.scrollTop - top) > 2) rows.scrollTo({ top, behavior });
   }
 
   const visible = (el) => !el.disabled && el.getClientRects().length > 0 && !el.closest('[hidden]');
@@ -672,8 +677,9 @@
     $('#upd-progress').hidden = !running;
     if (running) $('#upd-step').textContent = u.running.step;
     const run = $('#upd-run');
-    run.disabled = running || !u.count;
-    run.textContent = running ? 'Läuft …' : u.count ? 'Alles aktualisieren' : 'Nichts zu tun';
+    // Always allowed: even if the check finds nothing, a real `flatpak update` may.
+    run.disabled = running;
+    run.textContent = running ? 'Läuft …' : u.count ? 'Alles aktualisieren' : 'Jetzt aktualisieren';
     $('#upd-check').disabled = running || u.checking;
     $$('#updates .toggle[data-setting]').forEach((t) => t.setAttribute('aria-checked', String(!!S.settings[t.dataset.setting])));
     if (scope() && scope().id === 'updates') {
@@ -706,7 +712,7 @@
     renderUpdates();
     openLayer($('#updates'), { onClose: () => setTimeout(ensureUpdatePolling, 0) });
     const u = updatesNow();
-    setFocus(u && u.count && !u.running ? $('#upd-run') : $('#updates [data-close]'), { noScroll: true });
+    setFocus(u && !u.running ? $('#upd-run') : $('#updates [data-close]'), { noScroll: true });
     ensureUpdatePolling();
     if (!u || (!u.checking && !u.running && (!u.checkedAt || Date.now() / 1000 - u.checkedAt > 600))) checkUpdates();
   }
@@ -858,7 +864,7 @@
 
   async function pollStatus() {
     clearTimeout(ui.pollTimer);
-    let next = 5000;
+    let next = 8000;
     try {
       STATUS = await api.get('/api/status');
       ui.statusFails = 0;
@@ -1033,14 +1039,23 @@
   });
 
   // ---------------------------------------------------------------- input: pointer
+  let hoverTarget = null;
   document.addEventListener('pointermove', (e) => {
     if (e.pointerType !== 'mouse' || ui.launching) return;
     const el = e.target.closest('[data-nav]');
-    if (!el || el === ui.focus || !visible(el)) return;
-    const layer = scope();
-    if (layer ? !layer.contains(el) : el.closest('.layer, .offline')) return;
-    setFocus(el, { noScroll: true });
-  });
+    if (!el || el === ui.focus || el === hoverTarget) return;
+    if (!hoverTarget) {
+      requestAnimationFrame(() => {
+        const target = hoverTarget;
+        hoverTarget = null;
+        if (!target || target === ui.focus || !visible(target)) return;
+        const layer = scope();
+        if (layer ? !layer.contains(target) : target.closest('.layer, .offline')) return;
+        setFocus(target, { noScroll: true });
+      });
+    }
+    hoverTarget = el;
+  }, { passive: true });
 
   document.addEventListener('pointerdown', (e) => {
     const layer = scope();

@@ -364,7 +364,11 @@ class Browser:
             "--overscroll-history-navigation=0",
             "--hide-crash-restore-bubble",
             "--autoplay-policy=no-user-gesture-required",
-            "--disable-features=Translate,MediaRouter",
+            # OutdatedBuildDetector = the "Can't update Chrome / Reinstall" bubble; Flatpak Chrome
+            # is updated by NovaDeck instead, and "Reinstall" only leads to a useless .deb.
+            "--disable-features=Translate,MediaRouter,OutdatedBuildDetector",
+            "--ignore-gpu-blocklist",
+            "--enable-gpu-rasterization",
             "--class=NovaDeck",
         ]
 
@@ -989,32 +993,59 @@ def apply_self_update(reopen: bool) -> None:
     spawn(argv, "update", env={**os.environ, "NOVA_IN_TERMINAL": "1"})
 
 
-def flatpak_pending_updates() -> tuple[list[dict], int, bool]:
-    """Returns (apps with updates, number of other refs, whether the lookup worked)."""
+def flatpak_pending_updates(low_priority: bool = False) -> tuple[list[dict], int, list[str]]:
+    """Returns (apps with updates, number of other refs, scopes that could not be checked)."""
     names: dict[str, str] = {}
     for line in run_out(["flatpak", "list", "--app", "--columns=application,name"], 15).splitlines():
         parts = line.split("\t")
         if len(parts) >= 2 and parts[0].strip():
             names[parts[0].strip()] = parts[1].strip() or parts[0].strip()
-    apps: list[dict] = []
-    others, seen, worked = 0, set(), False
-    for scope in ("--user", "--system"):
+    prefix = _low_priority() if low_priority else []
+    results: dict[str, tuple[int, str]] = {}
+
+    def lookup(scope: str) -> None:
+        argv = prefix + ["flatpak", "remote-ls", f"--{scope}", "--updates", "--columns=application"]
         try:
-            res = subprocess.run(["flatpak", "remote-ls", scope, "--updates", "--columns=application"],
-                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                 timeout=90, check=False)
-        except (OSError, subprocess.SubprocessError):
-            continue
-        worked = worked or res.returncode == 0
-        for ref in res.stdout.decode("utf-8", "replace").split():
-            if ref in seen or ref.lower() == "application":
+            res = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 timeout=240, check=False, env={**os.environ, "LC_ALL": "C"})
+            results[scope] = (res.returncode, res.stdout.decode("utf-8", "replace"))
+            err = res.stderr.decode("utf-8", "replace").strip()
+        except (OSError, subprocess.SubprocessError) as exc:
+            results[scope] = (1, "")
+            err = str(exc)
+        if err or results[scope][0] != 0:
+            _update_log(f"remote-ls --{scope}: rc={results[scope][0]} {err[-400:]}")
+
+    threads = [threading.Thread(target=lookup, args=(scope,)) for scope in ("user", "system")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    apps: list[dict] = []
+    others, seen, failed = 0, set(), []
+    for scope in ("user", "system"):
+        code, out = results.get(scope, (1, ""))
+        if code != 0:
+            failed.append(scope)
+        for ref in out.split():
+            if ref in seen or ref.lower() in ("application", "id"):
                 continue
             seen.add(ref)
             if ref in names:
-                apps.append({"id": ref, "name": names[ref], "scope": scope[2:]})
+                apps.append({"id": ref, "name": names[ref], "scope": scope})
             else:
                 others += 1
-    return apps, others, worked
+    return apps, others, failed
+
+
+def _update_log(text: str) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with open(STATE_DIR / "update.log", "a", encoding="utf-8") as fh:
+            fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {text}\n")
+    except OSError:
+        pass
 
 
 def system_updates_allowed() -> bool:
@@ -1051,6 +1082,7 @@ class Updater:
         self.last: dict | None = None
         self.error = ""
         self._demo_done = False
+        self._touched: set[str] = set()
 
     def summary(self) -> dict:
         with self.lock:
@@ -1072,7 +1104,7 @@ class Updater:
     def check_async(self) -> None:
         threading.Thread(target=self.check, daemon=True).start()
 
-    def check(self) -> None:
+    def check(self, low_priority: bool = False) -> None:
         with self.lock:
             if self.checking or self.running:
                 return
@@ -1082,18 +1114,24 @@ class Updater:
                 time.sleep(1.0)
                 pending = not self._demo_done
                 apps = [{"id": "com.google.Chrome", "name": "Google Chrome", "scope": "user"}] if pending else []
-                others, worked = (2 if pending else 0), True
-                remote = {"version": "1.2.0" if pending else VERSION,
+                others, worked, failed = (2 if pending else 0), True, []
+                bumped = ".".join(str(n) for n in (parse_version(VERSION) + (0, 0))[:1] + (parse_version(VERSION)[1:2] or (0,)))
+                remote = {"version": f"{bumped}.9" if pending else VERSION,
                           "notes": ["Beispiel: Neue Funktion aus der Demo."] if pending else []}
             else:
-                apps, others, worked = flatpak_pending_updates() if shutil.which("flatpak") else ([], 0, True)
+                apps, others, failed = flatpak_pending_updates(low_priority) if shutil.which("flatpak") else ([], 0, [])
                 remote = fetch_remote_version()
+                worked = len(failed) < 2
             with self.lock:
                 self.apps, self.others = apps, others
                 if remote:
                     self.remote = remote
                 self.checked_at = time.time()
-                self.error = "" if worked or remote else "Keine Verbindung. Bist du online?"
+                if not DEMO and failed:
+                    self.error = ("Keine Verbindung. Bist du online?" if not worked and not remote
+                                  else "Konnte nicht alle Apps prüfen. „Jetzt aktualisieren“ geht trotzdem.")
+                else:
+                    self.error = ""
         finally:
             with self.lock:
                 self.checking = False
@@ -1123,13 +1161,17 @@ class Updater:
                 return 1
             for raw in proc.stdout:  # type: ignore[union-attr]
                 logfh.write(raw)
-                m = re.search(r"(?:app|runtime)/([A-Za-z0-9_.\-]+)/", raw.decode("utf-8", "replace"))
+                line = raw.decode("utf-8", "replace")
+                m = re.search(r"(?:app|runtime)/([A-Za-z0-9_.\-]+)/", line) or \
+                    re.search(r"^\s*\d+\.\s+(?:\S+\s+)?([A-Za-z0-9_\-]+(?:\.[A-Za-z0-9_\-]+){2,})\s", line)
                 if m:
+                    self._touched.add(m.group(1))
                     self._step(f"Aktualisiere {names.get(m.group(1), m.group(1))} …")
             return proc.wait()
 
     def _run(self, auto: bool, include_self: bool) -> None:
         ok, updated, handed_over = True, 0, False
+        self._touched = set()
         try:
             before = self.summary()
             updated = len(before["apps"]) + before["others"]
@@ -1151,6 +1193,7 @@ class Updater:
                     # Leftover runtimes; failures here (e.g. "can't remove …") are harmless.
                     self._step("Räume auf …")
                     run_out(prefix + ["flatpak", "uninstall", scope, "--unused", "-y", "--noninteractive"], 900)
+                updated = max(updated, len(self._touched))
                 self.ctx.flatpaks.invalidate()
             if include_self and before["self"]["available"]:
                 self._step(f"Lade NovaDeck {before['self']['latest']} …")
@@ -1171,7 +1214,10 @@ class Updater:
                 if not handed_over:
                     self.running = None
                     if ok:
-                        message = "Alles aktualisiert." if updated else "Alles war schon aktuell."
+                        message = (f"{updated} Update{'s' if updated != 1 else ''} installiert." if updated
+                                   else "Alles war schon aktuell.")
+                        if any(ref.startswith(CHROME_FLATPAK) for ref in self._touched):
+                            message += " Schließ Chrome einmal komplett, dann läuft die neue Version."
                     else:
                         message = "Nicht alles ließ sich aktualisieren. Später nochmal versuchen."
                     self.last = {"ok": ok, "message": message, "at": time.time(), "auto": auto, "count": updated}
@@ -1186,7 +1232,7 @@ class Updater:
     def background(self) -> None:
         time.sleep(25)
         while True:
-            self.check()
+            self.check(low_priority=True)
             settings = self.ctx.store.snapshot()["settings"]
             pending = self.summary()
             if (settings.get("autoUpdate") and not DEMO and self.auto_allowed()

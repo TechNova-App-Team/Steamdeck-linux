@@ -171,6 +171,8 @@ zeigt, was NovaDeck auf deinem Deck findet (Browser, Steam, Lautstärke, Helligk
 
 | Problem | Lösung |
 |---|---|
+| Hub reagiert träge | Ab Version 1.2 deutlich flüssiger. Noch leichter wird's im Schnellmenü mit „Effekte reduzieren“. |
+| Chrome meldet „Can't update Chrome / Reinstall Chrome“ | Nicht auf „Reinstall“ tippen (das lädt nur eine .deb, die auf dem Deck nicht geht). Ab 1.2 ist die Meldung aus; Chrome aktualisierst du über die Kachel *Updates*. |
 | Hub öffnet sich nicht | Prüfen, ob Google Chrome installiert ist (`doctor`). Ohne Chrome öffnet sich der Hub im Standard-Browser. |
 | Eine gestartete App erscheint hinter dem Hub | Im Schnellmenü „Hub beim Start schließen“ einschalten (Standard). |
 | Steam-Tastatur erscheint nicht | Steam muss im Desktop-Modus laufen. Notfalls Steam über das Icon in der Leiste neu starten. |

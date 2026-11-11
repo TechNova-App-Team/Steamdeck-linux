@@ -127,14 +127,25 @@ class UpdateTest(unittest.TestCase):
     def test_pending_updates_parsing(self):
         def fake_run(argv, **kwargs):
             out = b"com.google.Chrome\norg.freedesktop.Platform.GL.default\n" if "--user" in argv else b"com.spotify.Client\n"
-            return mock.Mock(returncode=0, stdout=out)
+            return mock.Mock(returncode=0, stdout=out, stderr=b"")
         listing = "com.google.Chrome\tGoogle Chrome\ncom.spotify.Client\tSpotify\n"
         with mock.patch.object(nd, "run_out", return_value=listing), \
                 mock.patch.object(nd.subprocess, "run", side_effect=fake_run):
-            apps, others, worked = nd.flatpak_pending_updates()
-        self.assertEqual([a["name"] for a in apps], ["Google Chrome", "Spotify"])
+            apps, others, failed = nd.flatpak_pending_updates()
+        self.assertEqual(sorted(a["name"] for a in apps), ["Google Chrome", "Spotify"])
         self.assertEqual(others, 1)
-        self.assertTrue(worked)
+        self.assertEqual(failed, [])
+
+    def test_pending_updates_reports_failed_scope(self):
+        def fake_run(argv, **kwargs):
+            if "--system" in argv:
+                return mock.Mock(returncode=1, stdout=b"", stderr=b"error: Unable to load summary")
+            return mock.Mock(returncode=0, stdout=b"", stderr=b"")
+        with mock.patch.object(nd, "run_out", return_value=""), \
+                mock.patch.object(nd.subprocess, "run", side_effect=fake_run):
+            apps, others, failed = nd.flatpak_pending_updates()
+        self.assertEqual((apps, others, failed), ([], 0, ["system"]))
+        self.assertIn("Unable to load summary", (nd.STATE_DIR / "update.log").read_text())
 
     def test_old_state_gets_whats_new(self):
         nd.CONFIG_DIR.mkdir(parents=True, exist_ok=True)

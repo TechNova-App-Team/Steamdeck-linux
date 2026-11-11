@@ -1,9 +1,9 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "notes": [
-    "Neue Kachel „Updates“: Chrome, Minecraft-Launcher, Spotify & Co. und NovaDeck selbst mit einem Druck auf A aktualisieren.",
-    "Automatische Updates im Hintergrund, leise und nie während Cloud-Gaming oder bei schwachem Akku.",
-    "NovaDeck aktualisiert sich ab jetzt selbst, wenn du in den Desktop-Modus wechselst.",
-    "Installation auch per Einzeiler in der Konsole möglich."
+    "Deutlich flüssiger: Der Hub rechnet nicht mehr ständig im Hintergrund, Eingaben kommen sofort an.",
+    "Updates prüft gründlicher und kann jederzeit „Jetzt aktualisieren“, auch wenn die Suche nichts findet.",
+    "Chrome zeigt keine „Reinstall Chrome“-Meldung mehr. Die führte nur zu einer .deb-Datei, die auf dem Deck nicht funktioniert. NovaDeck hält Chrome selbst aktuell.",
+    "Nach einem Chrome-Update sagt dir NovaDeck, wann du Chrome einmal neu starten solltest."
   ]
 }
